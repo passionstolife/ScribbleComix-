@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
-import { Wand2, Save, Image as ImageIcon, LayoutGrid, AlignJustify, Plus, Trash2, RefreshCw, Loader2, ArrowLeft } from "lucide-react";
+import { Wand2, Save, Image as ImageIcon, LayoutGrid, AlignJustify, Plus, Trash2, RefreshCw, Loader2, ArrowLeft, Sparkles, Crown, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 
@@ -17,7 +17,11 @@ const emptyPanel = () => ({
 const Creator = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { fetchBilling } = useAuth();
+    const { fetchBilling, billing } = useAuth();
+    const tier = billing?.tier || "free";
+    const credits = billing?.credits ?? 0;
+    const isPro = tier === "pro" || tier === "ultimate";
+    const [useCharacterConsistency, setUseCharacterConsistency] = useState(false);
     const [loadingComic, setLoadingComic] = useState(!!id);
     const [title, setTitle] = useState("Untitled Comic");
     const [synopsis, setSynopsis] = useState("");
@@ -70,7 +74,15 @@ const Creator = () => {
         if (!panel?.image_prompt?.trim()) { toast.error("Add an image prompt first"); return; }
         setImgLoadingId(pid);
         try {
-            const { data } = await api.post("/generate/panel-image", { prompt: panel.image_prompt });
+            // If character consistency is ON (Pro/Ultimate), use first panel with an image as reference.
+            let refImg = null;
+            if (isPro && useCharacterConsistency) {
+                const firstWithImage = panels.find(p => p.image_base64 && p.id !== pid);
+                if (firstWithImage) refImg = firstWithImage.image_base64;
+            }
+            const body = { prompt: panel.image_prompt };
+            if (refImg) body.reference_image_b64 = refImg;
+            const { data } = await api.post("/generate/panel-image", body);
             setPanels((ps) => ps.map(p => p.id === pid ? { ...p, image_base64: data.image_base64 } : p));
             fetchBilling && fetchBilling();
         } catch (e) {
@@ -86,12 +98,17 @@ const Creator = () => {
 
     const generateAllImages = async () => {
         let outOfCredits = false;
+        let referenceImage = null;
         for (const p of panels) {
             if (!p.image_prompt) continue;
             setImgLoadingId(p.id);
             try {
-                const { data } = await api.post("/generate/panel-image", { prompt: p.image_prompt });
+                const body = { prompt: p.image_prompt };
+                if (isPro && useCharacterConsistency && referenceImage) body.reference_image_b64 = referenceImage;
+                const { data } = await api.post("/generate/panel-image", body);
                 setPanels((ps) => ps.map(x => x.id === p.id ? { ...x, image_base64: data.image_base64 } : x));
+                // Use the first successful panel as reference for the rest
+                if (isPro && useCharacterConsistency && !referenceImage) referenceImage = data.image_base64;
             } catch (e) {
                 if (e?.response?.status === 402) { outOfCredits = true; break; }
             }
@@ -172,6 +189,55 @@ const Creator = () => {
                         <button data-testid="generate-all-images-btn" onClick={generateAllImages} disabled={!!imgLoadingId} className="btn-yellow w-full mt-3 inline-flex items-center justify-center gap-2">
                             {imgLoadingId ? <><Loader2 className="animate-spin" size={16}/> Sketching…</> : <><ImageIcon size={16} strokeWidth={2.5}/> Sketch all panels</>}
                         </button>
+                        {/* Credits remaining + soft upsell */}
+                        <div className="mt-3 flex items-center justify-between text-xs font-body" data-testid="credits-remaining">
+                            <span className="text-ink/70">
+                                {tier === "ultimate" ? (
+                                    <span className="inline-flex items-center gap-1"><Crown size={12} strokeWidth={2.5}/> Unlimited sketches</span>
+                                ) : (
+                                    <>Credits left: <strong>{credits}</strong></>
+                                )}
+                            </span>
+                            {tier !== "ultimate" && (
+                                <button onClick={() => navigate('/billing')} className="underline hover:text-hotpink">Top up</button>
+                            )}
+                        </div>
+                        {tier !== "ultimate" && credits < 5 && (
+                            <div className="mt-3 border-2 border-ink bg-hotpink/10 p-3 relative" data-testid="low-credits-upsell">
+                                <div className="flex items-start gap-2">
+                                    <Zap size={16} strokeWidth={2.5} className="mt-0.5 text-hotpink"/>
+                                    <div>
+                                        <div className="font-display font-bold text-sm">Running low on ink!</div>
+                                        <div className="text-xs font-body text-ink/80 mt-0.5">Grab <strong>INK50</strong> for 50% off your first Pro month, or refill with a credit pack.</div>
+                                        <button data-testid="upsell-btn" onClick={() => navigate('/billing')} className="mt-2 btn-pink !py-1.5 !px-3 text-xs">See plans</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {/* Character consistency toggle — Pro+ */}
+                        <div className={`mt-3 border-2 border-ink p-3 ${isPro ? "bg-highlight/30" : "bg-white/60 opacity-80"}`} data-testid="char-consistency-row">
+                            <label className="flex items-start gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    data-testid="char-consistency-toggle"
+                                    disabled={!isPro}
+                                    checked={isPro && useCharacterConsistency}
+                                    onChange={(e) => setUseCharacterConsistency(e.target.checked)}
+                                    className="mt-1 w-4 h-4 accent-hotpink"
+                                />
+                                <div>
+                                    <div className="font-display font-bold text-sm flex items-center gap-1">
+                                        {isPro ? <Sparkles size={14} strokeWidth={2.5}/> : <Crown size={14} strokeWidth={2.5}/>}
+                                        Character consistency
+                                    </div>
+                                    <div className="text-xs font-body text-ink/80 mt-0.5">
+                                        {isPro
+                                            ? "Uses panel 1's sketch as a reference so characters look the same across panels."
+                                            : <>Pro / Ultimate perk. <button onClick={() => navigate('/billing')} className="underline hover:text-hotpink font-bold">Upgrade</button></>}
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
                     </div>
 
                     <div className="ink-card p-5">

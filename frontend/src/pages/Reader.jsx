@@ -2,14 +2,19 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify } from "lucide-react";
+import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown } from "lucide-react";
 import { toast } from "sonner";
+import { jsPDF } from "jspdf";
+import { useAuth } from "../context/AuthContext";
 
 const Reader = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { billing } = useAuth();
+    const isUltimate = billing?.tier === "ultimate";
     const [comic, setComic] = useState(null);
     const [layoutOverride, setLayoutOverride] = useState(null);
+    const [exportingPdf, setExportingPdf] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -28,6 +33,67 @@ const Reader = () => {
     }
 
     const layout = layoutOverride || comic.layout;
+
+    const downloadPDF = async () => {
+        if (!isUltimate) {
+            toast.error("PDF export is an Ultimate perk.", { action: { label: "Upgrade", onClick: () => navigate('/billing') } });
+            return;
+        }
+        setExportingPdf(true);
+        try {
+            const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+            const pageW = pdf.internal.pageSize.getWidth();
+            const pageH = pdf.internal.pageSize.getHeight();
+            const margin = 36;
+
+            // Title page
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(32);
+            pdf.text(comic.title, margin, margin + 32);
+            if (comic.synopsis) {
+                pdf.setFont("helvetica", "normal");
+                pdf.setFontSize(12);
+                const lines = pdf.splitTextToSize(comic.synopsis, pageW - margin * 2);
+                pdf.text(lines, margin, margin + 64);
+            }
+
+            // Grid layout: 2 cols x 3 rows per page
+            const cols = 2, rows = 3;
+            const gap = 16;
+            const cellW = (pageW - margin * 2 - gap * (cols - 1)) / cols;
+            const cellH = (pageH - margin * 2 - gap * (rows - 1)) / rows - 20; // leave room for caption
+            let idx = 0;
+            pdf.addPage();
+            for (const p of comic.panels) {
+                const posInPage = idx % (cols * rows);
+                if (posInPage === 0 && idx !== 0) pdf.addPage();
+                const col = posInPage % cols;
+                const row = Math.floor(posInPage / cols);
+                const x = margin + col * (cellW + gap);
+                const y = margin + row * (cellH + gap + 20);
+                // Border
+                pdf.setLineWidth(2);
+                pdf.rect(x, y, cellW, cellH);
+                if (p.image_base64) {
+                    try {
+                        pdf.addImage(p.image_base64, "PNG", x + 2, y + 2, cellW - 4, cellH - 4, undefined, "FAST");
+                    } catch (_e) { /* ignore */ }
+                }
+                // Caption
+                pdf.setFont("helvetica", "italic");
+                pdf.setFontSize(10);
+                const capLines = pdf.splitTextToSize(p.caption || "", cellW);
+                pdf.text(capLines.slice(0, 2), x, y + cellH + 12);
+                idx += 1;
+            }
+            pdf.save(`${comic.title.replace(/[^a-z0-9-_]/gi, '_')}.pdf`);
+            toast.success("PDF downloaded!");
+        } catch (e) {
+            toast.error("PDF export failed");
+        } finally {
+            setExportingPdf(false);
+        }
+    };
 
     const downloadHTML = () => {
         const html = `<!doctype html><html><head><meta charset='utf-8'><title>${comic.title}</title>

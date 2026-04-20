@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict
 from datetime import datetime, timezone, timedelta
 import httpx
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout,
     CheckoutSessionRequest,
@@ -84,6 +84,7 @@ class GenerateStoryRequest(BaseModel):
 class GeneratePanelImageRequest(BaseModel):
     prompt: str
     style_hint: Optional[str] = None
+    reference_image_b64: Optional[str] = None  # previous panel as reference for character consistency (Pro/Ultimate)
 
 
 class CreateComicRequest(BaseModel):
@@ -330,8 +331,22 @@ async def generate_panel_image(
                    system_message="You create hand-drawn black and white sketch comic panels.")
     chat.with_model("gemini", "gemini-3.1-flash-image-preview").with_params(modalities=["image", "text"])
 
+    # Reference-image (character consistency) — Pro/Ultimate perk
+    file_contents = None
+    if body.reference_image_b64 and effective_tier in ("pro", "ultimate"):
+        ref = body.reference_image_b64
+        # strip data URL prefix if present
+        if "," in ref and ref.startswith("data:"):
+            ref = ref.split(",", 1)[1]
+        file_contents = [ImageContent(ref)]
+        full_prompt = (
+            f"Keep the same character(s), outfits, and overall style as the reference image. "
+            f"New scene: {body.prompt}. Render strictly as: {body.style_hint or SKETCH_STYLE}."
+        )
+
     try:
-        _text, images = await chat.send_message_multimodal_response(UserMessage(text=full_prompt))
+        msg = UserMessage(text=full_prompt, file_contents=file_contents) if file_contents else UserMessage(text=full_prompt)
+        _text, images = await chat.send_message_multimodal_response(msg)
     except Exception as e:
         logging.exception("image gen failed")
         raise HTTPException(status_code=502, detail=f"Image generation failed: {e}")
@@ -424,6 +439,13 @@ async def delete_comic(comic_id: str, request: Request,
 class CheckoutBody(BaseModel):
     package_id: str
     origin_url: str
+    promo_code: Optional[str] = None
+
+
+# Promo codes: server-authoritative. Only first pro sub gets 50% off.
+PROMO_CODES = {
+    "INK50": {"applies_to": ["sub_pro"], "percent_off": 50, "first_time_only": True},
+}
 
 
 @api_router.get("/billing/packages")
@@ -465,13 +487,32 @@ async def create_billing_checkout(body: CheckoutBody, request: Request,
         raise HTTPException(status_code=400, detail="Invalid package")
     pkg = PACKAGES[body.package_id]
 
+    amount = float(pkg["amount"])
+    promo_applied = None
+    if body.promo_code:
+        code = body.promo_code.strip().upper()
+        promo = PROMO_CODES.get(code)
+        if not promo:
+            raise HTTPException(status_code=400, detail="Invalid promo code")
+        if body.package_id not in promo["applies_to"]:
+            raise HTTPException(status_code=400, detail=f"Promo doesn't apply to {pkg['label']}")
+        if promo.get("first_time_only"):
+            prior = await db.payment_transactions.find_one(
+                {"user_id": u.user_id, "package_id": body.package_id, "payment_status": "paid"},
+                {"_id": 0},
+            )
+            if prior:
+                raise HTTPException(status_code=400, detail="Promo only for first-time purchase")
+        amount = round(amount * (100 - promo["percent_off"]) / 100, 2)
+        promo_applied = code
+
     origin = body.origin_url.rstrip("/")
     success_url = f"{origin}/billing/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/billing"
 
     stripe_checkout = _stripe_client(request)
     req = CheckoutSessionRequest(
-        amount=float(pkg["amount"]),
+        amount=amount,
         currency="usd",
         success_url=success_url,
         cancel_url=cancel_url,
@@ -480,6 +521,7 @@ async def create_billing_checkout(body: CheckoutBody, request: Request,
             "email": u.email,
             "package_id": body.package_id,
             "kind": pkg["kind"],
+            "promo": promo_applied or "",
         },
     )
     session = await stripe_checkout.create_checkout_session(req)
@@ -491,7 +533,9 @@ async def create_billing_checkout(body: CheckoutBody, request: Request,
         "email": u.email,
         "package_id": body.package_id,
         "kind": pkg["kind"],
-        "amount": float(pkg["amount"]),
+        "amount": amount,
+        "original_amount": float(pkg["amount"]),
+        "promo_code": promo_applied,
         "currency": "usd",
         "credits": pkg.get("credits", 0),
         "tier": pkg.get("tier"),
@@ -502,7 +546,7 @@ async def create_billing_checkout(body: CheckoutBody, request: Request,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    return {"url": session.url, "session_id": session.session_id}
+    return {"url": session.url, "session_id": session.session_id, "amount": amount, "promo_applied": promo_applied}
 
 
 async def _grant_if_paid(session_id: str) -> dict:
