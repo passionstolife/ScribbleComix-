@@ -2,9 +2,8 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown } from "lucide-react";
+import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown, Share2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { jsPDF } from "jspdf";
 import { useAuth } from "../context/AuthContext";
 
 const Reader = () => {
@@ -15,6 +14,7 @@ const Reader = () => {
     const [comic, setComic] = useState(null);
     const [layoutOverride, setLayoutOverride] = useState(null);
     const [exportingPdf, setExportingPdf] = useState(false);
+    const [sharing, setSharing] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -41,6 +41,8 @@ const Reader = () => {
         }
         setExportingPdf(true);
         try {
+            // Dynamic import: jsPDF is loaded only when Ultimate user triggers PDF export.
+            const { jsPDF } = await import("jspdf");
             const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
             const pageW = pdf.internal.pageSize.getWidth();
             const pageH = pdf.internal.pageSize.getHeight();
@@ -122,6 +124,29 @@ const Reader = () => {
         URL.revokeObjectURL(url);
     };
 
+    const doShare = async () => {
+        setSharing(true);
+        try {
+            let shareId = comic.share_id;
+            if (!shareId || !comic.is_public) {
+                const { data } = await api.post(`/comics/${comic.comic_id}/share`);
+                shareId = data.share_id;
+                setComic((c) => ({ ...c, share_id: shareId, is_public: true }));
+            }
+            const shareUrl = `${window.location.origin}/read/${shareId}`;
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                toast.success("Share link copied!", { description: shareUrl });
+            } catch (_e) {
+                toast.success("Public link ready", { description: shareUrl });
+            }
+        } catch (e) {
+            toast.error("Could not create share link");
+        } finally {
+            setSharing(false);
+        }
+    };
+
     return (
         <div className="min-h-screen" data-testid="reader-page">
             <Navbar />
@@ -153,6 +178,15 @@ const Reader = () => {
                             title={isUltimate ? "Download PDF" : "Ultimate-only — click to see plans"}
                         >
                             {isUltimate ? <FileDown size={14}/> : <Crown size={14}/>} {exportingPdf ? "Exporting…" : "PDF"}
+                        </button>
+                        <button
+                            data-testid="reader-share"
+                            onClick={doShare}
+                            disabled={sharing}
+                            className="btn-blue !py-2 !px-3 text-sm inline-flex items-center gap-1"
+                            title="Create public share link"
+                        >
+                            {sharing ? <Loader2 className="animate-spin" size={14}/> : <Share2 size={14}/>} {comic?.is_public ? "Copy link" : "Share"}
                         </button>
                     </div>
                 </div>

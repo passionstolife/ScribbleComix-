@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
-import { Crown, Sparkles, Zap, Infinity as InfinityIcon, FileDown, PaintBucket, Loader2, Ticket, X } from "lucide-react";
+import { Crown, Sparkles, Zap, Infinity as InfinityIcon, FileDown, PaintBucket, Loader2, Ticket, X, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import WalkingDoodle from "../components/WalkingDoodle";
@@ -25,16 +25,20 @@ const Billing = () => {
     const [loadingId, setLoadingId] = useState(null);
     const [promo, setPromo] = useState("");
     const [appliedPromo, setAppliedPromo] = useState(null);
+    const [subConfig, setSubConfig] = useState({ recurring_enabled: false });
+    const [portalLoading, setPortalLoading] = useState(false);
 
     useEffect(() => {
         (async () => {
             try {
-                const [pkgs, bill] = await Promise.all([
+                const [pkgs, bill, cfg] = await Promise.all([
                     api.get("/billing/packages"),
                     api.get("/billing/me"),
+                    api.get("/billing/subscriptions-config"),
                 ]);
                 setPackages(pkgs.data.packages);
                 setMe(bill.data);
+                setSubConfig(cfg.data);
             } catch (e) {
                 toast.error("Couldn't load plans");
             }
@@ -44,6 +48,15 @@ const Billing = () => {
     const buy = async (pkg) => {
         setLoadingId(pkg.id);
         try {
+            // If true subscription mode is configured and this is a tier package, use recurring subscription endpoint.
+            if (pkg.kind === "tier" && subConfig.recurring_enabled) {
+                const { data } = await api.post("/billing/subscribe", {
+                    tier: pkg.tier,
+                    origin_url: window.location.origin,
+                });
+                window.location.href = data.url;
+                return;
+            }
             const payload = {
                 package_id: pkg.id,
                 origin_url: window.location.origin,
@@ -54,6 +67,17 @@ const Billing = () => {
         } catch (e) {
             toast.error(e?.response?.data?.detail || "Checkout failed");
             setLoadingId(null);
+        }
+    };
+
+    const openPortal = async () => {
+        setPortalLoading(true);
+        try {
+            const { data } = await api.post("/billing/portal", { return_url: window.location.origin + "/billing" });
+            window.location.href = data.url;
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || "Couldn't open portal");
+            setPortalLoading(false);
         }
     };
 
@@ -92,6 +116,16 @@ const Billing = () => {
                         </div>
                         {me?.tier_expires_at && tier !== "free" && (
                             <div className="mt-2 text-xs font-body text-ink/60">Renews/expires {new Date(me.tier_expires_at).toLocaleDateString()}</div>
+                        )}
+                        {subConfig.recurring_enabled && tier !== "free" && (
+                            <button
+                                data-testid="manage-subscription-btn"
+                                onClick={openPortal}
+                                disabled={portalLoading}
+                                className="mt-3 w-full btn-ink !py-1.5 !px-3 text-xs inline-flex items-center justify-center gap-1"
+                            >
+                                {portalLoading ? <Loader2 className="animate-spin" size={12}/> : <Settings size={12}/>} Manage subscription
+                            </button>
                         )}
                     </div>
                 </div>

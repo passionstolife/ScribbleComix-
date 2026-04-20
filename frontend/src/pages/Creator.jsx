@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Wand2, Save, Image as ImageIcon, LayoutGrid, AlignJustify, Plus, Trash2, RefreshCw, Loader2, ArrowLeft, Sparkles, Crown, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
+import PointingDoodle from "../components/PointingDoodle";
 
 const emptyPanel = () => ({
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2),
@@ -203,7 +204,8 @@ const Creator = () => {
                             )}
                         </div>
                         {tier !== "ultimate" && credits < 5 && (
-                            <div className="mt-3 border-2 border-ink bg-hotpink/10 p-3 relative" data-testid="low-credits-upsell">
+                            <div className="mt-3 border-2 border-ink bg-hotpink/10 p-3 relative overflow-visible" data-testid="low-credits-upsell">
+                                <PointingDoodle />
                                 <div className="flex items-start gap-2">
                                     <Zap size={16} strokeWidth={2.5} className="mt-0.5 text-hotpink"/>
                                     <div>

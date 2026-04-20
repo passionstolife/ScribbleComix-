@@ -10,6 +10,7 @@ import Creator from "./pages/Creator";
 import Reader from "./pages/Reader";
 import Billing from "./pages/Billing";
 import BillingSuccess from "./pages/BillingSuccess";
+import PublicReader from "./pages/PublicReader";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const AppRouter = () => {
@@ -27,6 +28,7 @@ const AppRouter = () => {
             <Route path="/comic/:id" element={<ProtectedRoute><Reader /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/billing/success" element={<ProtectedRoute><BillingSuccess /></ProtectedRoute>} />
+            <Route path="/read/:shareId" element={<PublicReader />} />
             <Route path="*" element={<Landing />} />
         </Routes>
     );

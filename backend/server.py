@@ -16,6 +16,7 @@ from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout,
     CheckoutSessionRequest,
 )
+import stripe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -26,6 +27,12 @@ db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
+# Optional: when set, enables TRUE Stripe subscriptions (recurring) + Customer Portal.
+STRIPE_PRICE_PRO = os.environ.get('STRIPE_PRICE_PRO')
+STRIPE_PRICE_ULTIMATE = os.environ.get('STRIPE_PRICE_ULTIMATE')
+
+if STRIPE_API_KEY:
+    stripe.api_key = STRIPE_API_KEY
 
 # ================= BILLING PACKAGES (server-authoritative) =================
 # Note: pricing and credits are fixed server-side. Frontend cannot alter.
@@ -73,6 +80,9 @@ class Comic(BaseModel):
     panels: List[Panel] = []
     created_at: str
     updated_at: str
+    share_id: Optional[str] = None  # present when sharing is enabled
+    is_public: bool = False
+    author_name: Optional[str] = None
 
 
 class GenerateStoryRequest(BaseModel):
@@ -435,6 +445,61 @@ async def delete_comic(comic_id: str, request: Request,
     return {"ok": True}
 
 
+# ================= PUBLIC SHARE =================
+@api_router.post("/comics/{comic_id}/share")
+async def enable_share(comic_id: str, request: Request,
+                        session_token: Optional[str] = Cookie(None),
+                        authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    doc = await db.comics.find_one({"comic_id": comic_id, "user_id": u.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    share_id = doc.get("share_id") or f"s_{uuid.uuid4().hex[:10]}"
+    await db.comics.update_one(
+        {"comic_id": comic_id},
+        {"$set": {"share_id": share_id, "is_public": True, "author_name": u.name}},
+    )
+    return {"share_id": share_id, "is_public": True}
+
+
+@api_router.post("/comics/{comic_id}/unshare")
+async def disable_share(comic_id: str, request: Request,
+                         session_token: Optional[str] = Cookie(None),
+                         authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    result = await db.comics.update_one(
+        {"comic_id": comic_id, "user_id": u.user_id},
+        {"$set": {"is_public": False}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    return {"is_public": False}
+
+
+class PublicComic(BaseModel):
+    title: str
+    synopsis: Optional[str] = ""
+    layout: Literal["grid", "webtoon"] = "grid"
+    panels: List[Panel] = []
+    author_name: Optional[str] = None
+    created_at: str
+
+
+@api_router.get("/public/comics/{share_id}", response_model=PublicComic)
+async def get_public_comic(share_id: str):
+    doc = await db.comics.find_one({"share_id": share_id, "is_public": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Comic not found or private")
+    return PublicComic(
+        title=doc["title"],
+        synopsis=doc.get("synopsis", ""),
+        layout=doc.get("layout", "grid"),
+        panels=doc.get("panels", []),
+        author_name=doc.get("author_name"),
+        created_at=doc.get("created_at", ""),
+    )
+
+
 # ================= BILLING =================
 class CheckoutBody(BaseModel):
     package_id: str
@@ -655,6 +720,116 @@ async def stripe_webhook(request: Request):
         )
         await _grant_if_paid(evt.session_id)
     return {"received": True}
+
+
+# ================= TRUE SUBSCRIPTIONS (recurring) + CUSTOMER PORTAL =================
+# These endpoints use the official stripe SDK for mode='subscription' since emergentintegrations'
+# CheckoutSessionRequest only supports one-time payments. They are ENABLED only when the user
+# has configured STRIPE_PRICE_PRO / STRIPE_PRICE_ULTIMATE env vars pointing at recurring prices
+# in their Stripe account. Falls back gracefully when not configured.
+
+class SubscribeBody(BaseModel):
+    tier: Literal["pro", "ultimate"]
+    origin_url: str
+
+
+@api_router.get("/billing/subscriptions-config")
+async def subscriptions_config():
+    return {
+        "recurring_enabled": bool(STRIPE_PRICE_PRO and STRIPE_PRICE_ULTIMATE),
+        "pro_price_id": STRIPE_PRICE_PRO,
+        "ultimate_price_id": STRIPE_PRICE_ULTIMATE,
+    }
+
+
+async def _get_or_create_stripe_customer(u: User) -> str:
+    """Return the Stripe customer_id for this user, creating one if needed."""
+    doc = await db.users.find_one({"user_id": u.user_id}, {"_id": 0})
+    if doc and doc.get("stripe_customer_id"):
+        return doc["stripe_customer_id"]
+    try:
+        cust = await stripe.Customer.create_async(
+            email=u.email,
+            name=u.name,
+            metadata={"user_id": u.user_id},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Stripe customer create failed: {e}")
+    await db.users.update_one({"user_id": u.user_id}, {"$set": {"stripe_customer_id": cust.id}})
+    return cust.id
+
+
+@api_router.post("/billing/subscribe")
+async def create_subscription(body: SubscribeBody, request: Request,
+                               session_token: Optional[str] = Cookie(None),
+                               authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if not (STRIPE_PRICE_PRO and STRIPE_PRICE_ULTIMATE):
+        raise HTTPException(
+            status_code=501,
+            detail="True subscription mode not configured. Set STRIPE_PRICE_PRO and STRIPE_PRICE_ULTIMATE env vars in Stripe live mode, or use the one-time /billing/checkout flow.",
+        )
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+
+    price_id = STRIPE_PRICE_PRO if body.tier == "pro" else STRIPE_PRICE_ULTIMATE
+    customer_id = await _get_or_create_stripe_customer(u)
+    origin = body.origin_url.rstrip("/")
+    try:
+        session = await stripe.checkout.Session.create_async(
+            mode="subscription",
+            customer=customer_id,
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url=f"{origin}/billing/success?session_id={{CHECKOUT_SESSION_ID}}&sub=1",
+            cancel_url=f"{origin}/billing",
+            metadata={
+                "user_id": u.user_id,
+                "email": u.email,
+                "tier": body.tier,
+                "kind": "subscription",
+            },
+            allow_promotion_codes=True,
+        )
+    except Exception as e:
+        logging.exception("subscribe failed")
+        raise HTTPException(status_code=502, detail=f"Could not start subscription: {e}")
+
+    await db.payment_transactions.insert_one({
+        "session_id": session.id,
+        "user_id": u.user_id,
+        "email": u.email,
+        "package_id": f"sub_{body.tier}",
+        "kind": "subscription",
+        "tier": body.tier,
+        "currency": "usd",
+        "payment_status": "pending",
+        "status": "initiated",
+        "granted": False,
+        "is_recurring": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"url": session.url, "session_id": session.id}
+
+
+@api_router.post("/billing/portal")
+async def customer_portal(request: Request,
+                           session_token: Optional[str] = Cookie(None),
+                           authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    customer_id = await _get_or_create_stripe_customer(u)
+    body = await request.json() if (await request.body()) else {}
+    return_url = (body.get("return_url") if isinstance(body, dict) else None) or ""
+    try:
+        portal = await stripe.billing_portal.Session.create_async(
+            customer=customer_id,
+            return_url=return_url or "https://stripe.com",
+        )
+    except Exception as e:
+        logging.exception("portal failed")
+        raise HTTPException(status_code=502, detail=f"Could not open portal: {e}")
+    return {"url": portal.url}
 
 
 @api_router.get("/")
