@@ -1,0 +1,30 @@
+{
+  "summary": "Retested Reader PDF button fix. Both FREE (Crown icon + 'PDF export is an Ultimate perk.' toast with Upgrade action, no download) and ULTIMATE (FileDown icon + jsPDF download of Test_Comic.pdf + 'PDF downloaded!' toast + stays on /comic/:id) flows verified working. Button at Reader.jsx L148-156 is correctly wired to downloadPDF(). Frontend-only retest as instructed; no backend changes.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_billing.py",
+    "/app/backend/tests/test_promo_and_reference.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Reader.jsx jsPDF is bundled into main chunk — consider dynamic import() since feature is Ultimate-only, to reduce initial bundle size.",
+    "Consider disabling the button's pointer-events or adding aria-disabled during exportingPdf (currently uses disabled attribute which is fine but no visible spinner affordance besides 'Exporting…' text)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (30/30 from iteration_3, not rerun this iter)", "frontend": "100% (reader-pdf flow — both FREE gating + ULT download verified)"},
+  "test_credentials": "FREE: test_session_1776681630005 (test-user-1776681630005, tier=free, owns comic_test_test-use). ULT: test_session_ult_1776681630019 (test-user-ult-1776681630019, tier=ultimate, owns comic_test_test-use). Use localStorage.setItem('session_token', <token>) before navigating.",
+  "seed_data_creation": "No new seed data created. Reused comics from iteration_3.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "reader-pdf button fix verified end-to-end. FREE user → sonner toast 'PDF export is an Ultimate perk.' + Upgrade action + Crown icon + no download. ULT user → FileDown icon + jsPDF download Test_Comic.pdf + 'PDF downloaded!' success toast + stays on /comic/:id with no console errors. All previously seeded users and comics still intact in mongo.",
+  "rca of the issue": "N/A — previous iteration bug (missing reader-pdf button) is now fixed as specified. Reader.jsx lines 148-156 render the button with correct gating, icons (Crown for non-Ultimate, FileDown for Ultimate), disabled state during exportingPdf, and onClick=downloadPDF."
+}

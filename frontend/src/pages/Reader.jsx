@@ -142,8 +142,17 @@ const Reader = () => {
                         <button data-testid="reader-edit" onClick={() => navigate(`/create/${comic.comic_id}`)} className="btn-ink !py-2 !px-3 text-sm inline-flex items-center gap-1">
                             <Pencil size={14}/> Edit
                         </button>
-                        <button data-testid="reader-download" onClick={downloadHTML} className="btn-pink !py-2 !px-3 text-sm inline-flex items-center gap-1">
-                            <Download size={14}/> Download
+                        <button data-testid="reader-download" onClick={downloadHTML} className="btn-yellow !py-2 !px-3 text-sm inline-flex items-center gap-1">
+                            <Download size={14}/> HTML
+                        </button>
+                        <button
+                            data-testid="reader-pdf"
+                            onClick={downloadPDF}
+                            disabled={exportingPdf}
+                            className={`!py-2 !px-3 text-sm inline-flex items-center gap-1 ${isUltimate ? 'btn-pink' : 'btn-ink'}`}
+                            title={isUltimate ? "Download PDF" : "Ultimate-only — click to see plans"}
+                        >
+                            {isUltimate ? <FileDown size={14}/> : <Crown size={14}/>} {exportingPdf ? "Exporting…" : "PDF"}
                         </button>
                     </div>
                 </div>
