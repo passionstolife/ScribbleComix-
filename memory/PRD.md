@@ -1,49 +1,39 @@
 # ScribbleComix — Product Requirement Doc
 
 ## Original Problem Statement
-"I want to create a sketch comic book story" — user wants an app that can generate playful, hand-drawn sketch-style comic books with both AI assistance and manual editing.
+"I want to create a sketch comic book story" — app that generates playful hand-drawn sketch comics with AI + manual editing.
 
-## User Choices (captured on 2026-02)
-- AI generation + manual comic editing (both)
-- LLM: Emergent Universal Key — Claude Sonnet 4.5 (story) + Gemini Nano Banana `gemini-3.1-flash-image-preview` (sketch panels)
-- Layout: user chooses Grid OR Webtoon
-- Auth: Emergent-managed Google Auth
-- Visual style: playful (ink-on-paper sketch brutalism)
+## User Choices
+- AI + manual comic editing
+- Emergent Universal Key: Claude Sonnet 4.5 (story) + Gemini Nano Banana `gemini-3.1-flash-image-preview` (sketch panels)
+- User-selectable Grid or Webtoon layout
+- Emergent Google Auth
+- Playful sketch/ink aesthetic
+- Monetization: credits + subscriptions (Stripe). Cost model: story free, sketch = 1 credit. Free tier: 20 credits. Paid: packs $3.99/$8.99/$17.99 + Pro $7.99/mo + Ultimate $15.99/mo (unlimited).
 
 ## Architecture
-- Backend: FastAPI + MongoDB (motor), emergentintegrations lib for LLM/image gen, httpx for Emergent Auth exchange.
-- Frontend: React (CRA) + React Router 7 + Tailwind + Shadcn + sonner toasts + lucide-react icons.
-- Auth flow: Landing → Google (auth.emergentagent.com) → redirect to `/dashboard#session_id=…` → `AppRouter` detects hash synchronously → `AuthCallback` exchanges via `POST /api/auth/session` → cookie + localStorage token.
-
-## User Personas
-- Casual storyteller: writes a one-line idea, gets a finished comic.
-- Doodler/creator: iterates on prompts, tweaks captions/dialogue, regenerates sketches per panel.
-
-## Core Requirements (static)
-1. Google login required to create/save comics.
-2. AI "Generate story" → title, synopsis, N panels with caption, dialogue, image_prompt.
-3. AI "Sketch" per panel via Nano Banana in ink-style.
-4. Per-panel editing of caption, dialogue, prompt.
-5. Layout toggle: 2×N grid vs vertical webtoon.
-6. Save / update / delete comics. List all.
-7. Reader view with download (HTML export).
+- Backend: FastAPI + MongoDB (motor), emergentintegrations (Claude+Nano Banana+Stripe), httpx for Emergent Auth exchange.
+- Frontend: React (CRA) + React Router + Tailwind + Shadcn + sonner + lucide-react.
+- Auth: Emergent Google Auth → `/dashboard#session_id=…` → backend exchange → cookie + localStorage token.
+- Payments: Stripe Checkout (one-time SKUs) via emergentintegrations. payment_transactions collection ensures idempotent granting. Subscriptions modeled as 30-day tier extensions (user renews manually).
 
 ## Implemented (2026-02)
-- Backend: `/api/auth/session`, `/api/auth/me`, `/api/auth/logout`, `/api/generate/story`, `/api/generate/panel-image`, `/api/comics` CRUD.
-- Frontend pages: Landing, Dashboard (My Comics), Creator (with sidebar + canvas), Reader (with layout override + HTML download), AuthCallback, ProtectedRoute.
-- Design: Caveat Brush + Fredoka + Nunito + Kalam fonts; paper texture body; ink borders + offset shadows; yellow/pink/blue accents; tape & wiggle/floaty animations.
-- Tested end-to-end with real Claude + Gemini (12/12 backend passing + full frontend flow verified).
+- Backend: `/api/auth/*`, `/api/generate/{story,panel-image}`, `/api/comics` CRUD, `/api/billing/{packages,me,checkout,status}`, `/api/webhook/stripe`.
+- Credits + tier gating on panel-image generation (402 on empty credits for non-ultimate).
+- Frontend pages: Landing (with Pricing section), Dashboard, Creator, Reader, AuthCallback, Billing, BillingSuccess (polling).
+- Navbar credits/tier chip.
+- 23/23 backend pytest + full frontend flow verified end-to-end.
 
 ## P0/P1/P2 Backlog
-- P1: PDF export (currently HTML only).
-- P1: Public share link (read-only reader with shareable URL).
-- P1: Reference character consistency (pass prior panel image as reference to Nano Banana for same-character look).
-- P2: Speech bubbles placement (drag to position bubble on image).
-- P2: Panel reordering (drag-and-drop).
-- P2: Social feed / discover page.
-- P2: Template starter prompts.
+- P1: True Stripe subscription mode with auto-renew (currently 30-day one-time)
+- P1: Reference-character consistency (Nano Banana with prior panel as reference) — unlock for Pro/Ultimate
+- P1: PDF export (Ultimate perk) — currently HTML only
+- P1: Public read-only share link for comics
+- P2: Panel reordering (drag-and-drop)
+- P2: Drag-to-position speech bubbles
+- P2: Template starter prompts
+- P2: Discover/community feed
 
 ## Next Tasks
-- Monetization hook: Pro tier (unlimited generations, PDF export, custom character styles) or credit pack.
-- Shareable public reader URL.
-- Reference-image chaining for character consistency across panels.
+- Wire PDF export + character consistency to the Ultimate tier flag (already gated on backend, needs implementation).
+- Add true Stripe subscription mode + customer portal for cancellation.

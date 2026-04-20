@@ -72,7 +72,7 @@ const Billing = () => {
                         <div className="font-display uppercase text-xs tracking-[0.2em] font-bold text-ink/70">Your balance</div>
                         <div className="font-heading text-5xl mt-1" data-testid="credits-count">{tier === "ultimate" ? "∞" : credits}</div>
                         <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 border-2 border-ink bg-highlight font-display font-bold text-xs uppercase" data-testid="tier-label">
-                            {tier === "ultimate" && <Crown size={12} />} {tier}
+                            {tier === "ultimate" && <Crown size={12} />}<span>{tier}</span>
                         </div>
                         {me?.tier_expires_at && tier !== "free" && (
                             <div className="mt-2 text-xs font-body text-ink/60">Renews/expires {new Date(me.tier_expires_at).toLocaleDateString()}</div>
