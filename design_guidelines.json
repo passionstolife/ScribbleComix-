@@ -1,0 +1,123 @@
+{
+  "theme": "light",
+  "archetype": "Vibrant Play / Conceptual Sketch (Archetype 6 + Sketch Brutalism)",
+  "emotion_and_tone": "Playful, tactile, unrestricted, and nostalgic. Evokes the feeling of doodling in a sketchbook with ink pens and highlighters. Avoids typical 'AI-slop' aesthetics by grounding the UI in physical, paper-like reality.",
+  "colors": {
+    "background": {
+      "default": "#FDFBF7",
+      "paper_texture": "url('https://images.pexels.com/photos/479444/pexels-photo-479444.jpeg')",
+      "halftone_pattern": "radial-gradient(circle, #111111 1px, transparent 1px)"
+    },
+    "foreground": {
+      "default": "#111111",
+      "muted": "#555555"
+    },
+    "primary": {
+      "default": "#FFE600",
+      "hover": "#FFD500",
+      "foreground": "#111111"
+    },
+    "secondary": {
+      "default": "#0057FF",
+      "hover": "#004CE6",
+      "foreground": "#FFFFFF"
+    },
+    "accent": {
+      "default": "#FF007F",
+      "hover": "#E60073",
+      "foreground": "#FFFFFF"
+    },
+    "surface": {
+      "card": "#FFFFFF",
+      "panel": "#F9F8F5"
+    },
+    "border": {
+      "default": "#111111",
+      "light": "#DDDDDD"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Caveat Brush, Fredoka, cursive",
+      "body": "Nunito, sans-serif",
+      "mono": "Comic Mono, monospace"
+    },
+    "scales": {
+      "h1": "text-5xl sm:text-6xl+ tracking-tight leading-none",
+      "h2": "text-4xl sm:text-5xl tracking-tight leading-tight",
+      "h3": "text-2xl sm:text-3xl leading-snug",
+      "h4": "text-xl sm:text-2xl leading-snug",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm leading-normal",
+      "overline": "text-xs tracking-[0.2em] uppercase font-bold"
+    }
+  },
+  "spacing_and_layout": {
+    "philosophy": "Generous, asymmetrical, organic. Elements should feel placed by hand, not perfectly aligned by a machine.",
+    "container_padding": "p-6 sm:p-8 lg:p-12",
+    "grid_gaps": "gap-8 sm:gap-12",
+    "patterns": {
+      "hero": "Asymmetrical split or overlapping bento layout. Use overlapping images resembling polaroids or sketchbook pages taped to the background.",
+      "editor": "Control Room Grid. Sidebar for AI prompt/controls (col-span-1), Main canvas for comic panels (col-span-3).",
+      "comic_grid": "Classic 4-6 panel (CSS Grid) OR Webtoon vertical scroll (Flex col) depending on user toggle."
+    }
+  },
+  "surfaces_and_components": {
+    "cards": "Solid background (#FFFFFF) with a 2px-3px solid ink border (#111111). Hard offset shadow (e.g., shadow-[6px_6px_0px_0px_#111111]) to mimic 2.5D paper cutouts.",
+    "buttons": {
+      "primary": "Highlighter yellow background, 2px solid black border, hard offset shadow. On hover/active, the shadow compresses (translate-y-1 translate-x-1 shadow-[2px_2px_0px_0px_#111111]) for a tactile button press feel.",
+      "secondary": "Marker blue or paper white background, same border and shadow behavior."
+    },
+    "inputs": "Solid white background, 2px solid black border, handwritten placeholder text style if possible. Focus state: ring-0, border changes to Accent Pink or Primary Yellow with a slight rotation (-rotate-1).",
+    "modals": "Opaque white background with thick ink borders, hard shadow, and perhaps a stylized 'tape' element visually holding it to the screen.",
+    "icons": "Use 'lucide-react' but customized with stroke-width 2.5 to look like marker drawings, or install 'iconoir-react' for a rougher, sketchier aesthetic."
+  },
+  "motion_and_interaction": {
+    "hover": "Spring-based transforms. Elements should subtly tilt (rotate-1 to -rotate-2) on hover to feel like physical paper being moved.",
+    "click": "Squish effect (scale-95) and shadow compression.",
+    "page_load": "Staggered fade-up with slight rotation for cards. Let Framer Motion add a 'bouncy' spring configuration (stiffness: 300, damping: 20)."
+  },
+  "media_and_assets": {
+    "rules": "Never use placeholder images. Images should reflect ink sketches, comic halftones, or creative scribble art.",
+    "image_urls": {
+      "hero_background_texture": {
+        "url": "https://images.pexels.com/photos/479444/pexels-photo-479444.jpeg",
+        "description": "Wrinkled paper texture for the overall app background or hero wrapper.",
+        "category": "background"
+      },
+      "halftone_accent": {
+        "url": "https://images.unsplash.com/photo-1700607125537-49f047223dfa",
+        "description": "Halftone dots pattern to be used as a CSS mask or background layer overlay.",
+        "category": "texture"
+      },
+      "hero_sketch_1": {
+        "url": "https://images.pexels.com/photos/4830121/pexels-photo-4830121.jpeg",
+        "description": "Expressive abstract art with bold black strokes to decorate the hero area.",
+        "category": "hero_decoration"
+      },
+      "comic_example_1": {
+        "url": "https://images.unsplash.com/photo-1744383104064-28aed58a2332",
+        "description": "Sketch of a woman in a notebook, use as an example in the 'My Comics' gallery.",
+        "category": "gallery_item"
+      },
+      "comic_example_2": {
+        "url": "https://images.pexels.com/photos/20329611/pexels-photo-20329611.jpeg",
+        "description": "Caricature drawing in progress, use as an example in the 'My Comics' gallery.",
+        "category": "gallery_item"
+      },
+      "google_logo": {
+        "url": "https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg",
+        "description": "Standard Google G logo for the auth button.",
+        "category": "icon"
+      }
+    }
+  },
+  "instructions_to_main_agent": {
+    "1": "Use pure HTML/Tailwind for the landing page layout to achieve the asymmetrical, overlapping 'scrapbook' aesthetic.",
+    "2": "Customize Shadcn components (buttons, inputs, dialogs) by overriding their default styles: add `border-2 border-black`, hard shadows `shadow-[4px_4px_0_0_#111111]`, and rounded corners.",
+    "3": "Implement Framer Motion for bouncy, tactile interactions (hover rotation, active shadow compression).",
+    "4": "In the Comic Creator editor, provide a clear UI toggle (e.g., Tabs) between 'Grid Layout' (CSS Grid, 2x2 or 3x2 panels) and 'Webtoon Layout' (flex-col, 100% width panels stacking vertically).",
+    "5": "Do not use 'Inter' font. Import 'Caveat Brush' and 'Nunito' from Google Fonts in the HTML head or CSS.",
+    "6": "Ensure all interactive elements have `data-testid` attributes."
+  }
+}
