@@ -139,6 +139,50 @@ const Landing = () => {
                 </div>
             </section>
 
+            {/* PRICING */}
+            <section id="pricing" className="relative py-20 bg-paper border-t-2 border-ink">
+                <div className="max-w-7xl mx-auto px-6 lg:px-10">
+                    <div className="flex items-end justify-between flex-wrap gap-4 mb-10">
+                        <div>
+                            <div className="font-display uppercase tracking-[0.2em] text-xs font-bold text-ink/70">Honest pricing</div>
+                            <h2 className="font-heading text-5xl sm:text-6xl mt-2">Cheaper than the others.</h2>
+                        </div>
+                        <p className="font-body text-ink/70 max-w-md">20 free credits on signup. Every sketch = 1 credit. Story generation is always free.</p>
+                    </div>
+                    <div className="grid md:grid-cols-3 gap-6">
+                        <div className="ink-card p-6" data-testid="tier-free">
+                            <div className="font-display uppercase text-xs tracking-[0.2em] font-bold text-ink/70">Free</div>
+                            <div className="font-heading text-5xl mt-2">$0</div>
+                            <ul className="mt-3 font-body space-y-1 text-sm">
+                                <li>✎ 20 sketch credits</li>
+                                <li>✎ Unlimited story generation</li>
+                                <li>✎ Grid & Webtoon layouts</li>
+                            </ul>
+                        </div>
+                        <div className="ink-card p-6 bg-highlight/40" data-testid="tier-pro">
+                            <div className="font-display uppercase text-xs tracking-[0.2em] font-bold text-ink/70">Pro</div>
+                            <div className="font-heading text-5xl mt-2">$7.99<span className="text-xl font-body text-ink/60">/mo</span></div>
+                            <ul className="mt-3 font-body space-y-1 text-sm">
+                                <li>✎ 300 credits every month</li>
+                                <li>✎ Character consistency</li>
+                                <li>✎ Priority generation</li>
+                            </ul>
+                        </div>
+                        <div className="ink-card p-6 bg-hotpink/10 relative" data-testid="tier-ultimate">
+                            <div className="absolute -top-3 -right-3 bg-hotpink text-white border-2 border-ink px-3 py-1 font-heading text-xl -rotate-[6deg] shadow-ink-sm">Best</div>
+                            <div className="font-display uppercase text-xs tracking-[0.2em] font-bold text-ink/70">Ultimate</div>
+                            <div className="font-heading text-5xl mt-2">$15.99<span className="text-xl font-body text-ink/60">/mo</span></div>
+                            <ul className="mt-3 font-body space-y-1 text-sm">
+                                <li>✎ Unlimited sketches</li>
+                                <li>✎ PDF export</li>
+                                <li>✎ Everything in Pro + priority</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div className="mt-6 text-sm font-body text-ink/60">Credit packs also available: $3.99 / $8.99 / $17.99.</div>
+                </div>
+            </section>
+
             {/* CTA */}
             <section className="py-24">
                 <div className="max-w-4xl mx-auto px-6 text-center">

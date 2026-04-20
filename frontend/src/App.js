@@ -8,6 +8,8 @@ import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import Creator from "./pages/Creator";
 import Reader from "./pages/Reader";
+import Billing from "./pages/Billing";
+import BillingSuccess from "./pages/BillingSuccess";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const AppRouter = () => {
@@ -23,6 +25,8 @@ const AppRouter = () => {
             <Route path="/create" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
             <Route path="/create/:id" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
             <Route path="/comic/:id" element={<ProtectedRoute><Reader /></ProtectedRoute>} />
+            <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+            <Route path="/billing/success" element={<ProtectedRoute><BillingSuccess /></ProtectedRoute>} />
             <Route path="*" element={<Landing />} />
         </Routes>
     );

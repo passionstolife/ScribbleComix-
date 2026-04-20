@@ -8,10 +8,14 @@ import uuid
 import base64
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from datetime import datetime, timezone, timedelta
 import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.payments.stripe.checkout import (
+    StripeCheckout,
+    CheckoutSessionRequest,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -21,6 +25,21 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
+
+# ================= BILLING PACKAGES (server-authoritative) =================
+# Note: pricing and credits are fixed server-side. Frontend cannot alter.
+FREE_SIGNUP_CREDITS = 20
+
+PACKAGES: Dict[str, Dict] = {
+    # Credit packs (one-time)
+    "pack_small":  {"kind": "credits", "label": "Starter Pack",  "amount": 3.99,  "credits": 50,  "desc": "50 sketch credits"},
+    "pack_value":  {"kind": "credits", "label": "Value Pack",    "amount": 8.99,  "credits": 150, "desc": "150 sketch credits"},
+    "pack_mega":   {"kind": "credits", "label": "Mega Pack",     "amount": 17.99, "credits": 400, "desc": "400 sketch credits"},
+    # Monthly tiers (one-time charges valid 30 days — user renews manually)
+    "sub_pro":     {"kind": "tier", "tier": "pro",      "label": "Pro Monthly",       "amount": 7.99,  "credits": 300, "desc": "300 credits + character consistency + priority"},
+    "sub_ultimate":{"kind": "tier", "tier": "ultimate", "label": "Ultimate Monthly",  "amount": 15.99, "credits": 0,   "desc": "Unlimited sketches + PDF + priority + everything"},
+}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -32,6 +51,9 @@ class User(BaseModel):
     email: str
     name: str
     picture: Optional[str] = None
+    credits: int = 0
+    tier: Literal["free", "pro", "ultimate"] = "free"
+    tier_expires_at: Optional[str] = None
 
 
 class Panel(BaseModel):
@@ -76,6 +98,26 @@ class UpdateComicRequest(BaseModel):
     synopsis: Optional[str] = None
     layout: Optional[Literal["grid", "webtoon"]] = None
     panels: Optional[List[Panel]] = None
+
+
+# ================= TIER HELPER =================
+def get_effective_tier(user: User) -> str:
+    """Returns 'ultimate' | 'pro' | 'free' based on active subscription expiry."""
+    tier = user.tier or "free"
+    if tier == "free":
+        return "free"
+    exp = user.tier_expires_at
+    if not exp:
+        return "free"
+    try:
+        exp_dt = datetime.fromisoformat(exp)
+    except Exception:
+        return "free"
+    if exp_dt.tzinfo is None:
+        exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+    if exp_dt < datetime.now(timezone.utc):
+        return "free"
+    return tier
 
 
 # ================= AUTH HELPERS =================
@@ -133,6 +175,12 @@ async def create_session(request: Request, response: Response):
             {"user_id": user_id},
             {"$set": {"name": data.get("name"), "picture": data.get("picture")}},
         )
+        # Backfill missing fields for old users
+        if "credits" not in existing:
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {"credits": FREE_SIGNUP_CREDITS, "tier": "free"}},
+            )
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
         await db.users.insert_one({
@@ -140,6 +188,9 @@ async def create_session(request: Request, response: Response):
             "email": email,
             "name": data.get("name", ""),
             "picture": data.get("picture", ""),
+            "credits": FREE_SIGNUP_CREDITS,
+            "tier": "free",
+            "tier_expires_at": None,
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
@@ -258,9 +309,18 @@ async def generate_panel_image(
     session_token: Optional[str] = Cookie(None),
     authorization: Optional[str] = Header(None),
 ):
-    await get_current_user(request, session_token, authorization)
+    u = await get_current_user(request, session_token, authorization)
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
+
+    # Credit / tier gating
+    effective_tier = get_effective_tier(u)
+    if effective_tier != "ultimate":
+        if (u.credits or 0) < 1:
+            raise HTTPException(
+                status_code=402,
+                detail="Out of credits. Upgrade to Ultimate for unlimited or buy a credit pack.",
+            )
 
     full_prompt = (
         f"{body.prompt}. Render strictly as: {body.style_hint or SKETCH_STYLE}. "
@@ -278,11 +338,18 @@ async def generate_panel_image(
 
     if not images:
         raise HTTPException(status_code=502, detail="No image returned")
+
+    # Deduct credit after success (ultimate users don't)
+    remaining = u.credits
+    if effective_tier != "ultimate":
+        await db.users.update_one({"user_id": u.user_id}, {"$inc": {"credits": -1}})
+        remaining = max(0, (u.credits or 0) - 1)
+
     img = images[0]
     mime = img.get("mime_type", "image/png")
     data = img["data"]
     data_url = f"data:{mime};base64,{data}"
-    return {"image_base64": data_url}
+    return {"image_base64": data_url, "credits_remaining": remaining, "tier": effective_tier}
 
 
 # ================= COMIC CRUD =================
@@ -351,6 +418,199 @@ async def delete_comic(comic_id: str, request: Request,
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Comic not found")
     return {"ok": True}
+
+
+# ================= BILLING =================
+class CheckoutBody(BaseModel):
+    package_id: str
+    origin_url: str
+
+
+@api_router.get("/billing/packages")
+async def list_packages():
+    return {
+        "packages": [
+            {"id": pid, **{k: v for k, v in p.items()}} for pid, p in PACKAGES.items()
+        ],
+        "free_signup_credits": FREE_SIGNUP_CREDITS,
+    }
+
+
+@api_router.get("/billing/me")
+async def billing_me(request: Request,
+                      session_token: Optional[str] = Cookie(None),
+                      authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    return {
+        "credits": u.credits,
+        "tier": get_effective_tier(u),
+        "tier_expires_at": u.tier_expires_at,
+    }
+
+
+def _stripe_client(request: Request) -> StripeCheckout:
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    host_url = str(request.base_url).rstrip("/")
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    return StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+
+
+@api_router.post("/billing/checkout")
+async def create_billing_checkout(body: CheckoutBody, request: Request,
+                                   session_token: Optional[str] = Cookie(None),
+                                   authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if body.package_id not in PACKAGES:
+        raise HTTPException(status_code=400, detail="Invalid package")
+    pkg = PACKAGES[body.package_id]
+
+    origin = body.origin_url.rstrip("/")
+    success_url = f"{origin}/billing/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/billing"
+
+    stripe_checkout = _stripe_client(request)
+    req = CheckoutSessionRequest(
+        amount=float(pkg["amount"]),
+        currency="usd",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "user_id": u.user_id,
+            "email": u.email,
+            "package_id": body.package_id,
+            "kind": pkg["kind"],
+        },
+    )
+    session = await stripe_checkout.create_checkout_session(req)
+
+    # Store pending transaction
+    await db.payment_transactions.insert_one({
+        "session_id": session.session_id,
+        "user_id": u.user_id,
+        "email": u.email,
+        "package_id": body.package_id,
+        "kind": pkg["kind"],
+        "amount": float(pkg["amount"]),
+        "currency": "usd",
+        "credits": pkg.get("credits", 0),
+        "tier": pkg.get("tier"),
+        "payment_status": "pending",
+        "status": "initiated",
+        "granted": False,
+        "metadata": {"user_id": u.user_id, "package_id": body.package_id},
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {"url": session.url, "session_id": session.session_id}
+
+
+async def _grant_if_paid(session_id: str) -> dict:
+    """Idempotently grant credits/tier when Stripe reports paid."""
+    tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.get("granted"):
+        return tx
+    if tx.get("payment_status") != "paid":
+        return tx
+    pkg_id = tx["package_id"]
+    pkg = PACKAGES.get(pkg_id)
+    if not pkg:
+        return tx
+    user_id = tx["user_id"]
+    update: Dict = {}
+    if pkg["kind"] == "credits":
+        await db.users.update_one({"user_id": user_id}, {"$inc": {"credits": pkg["credits"]}})
+    elif pkg["kind"] == "tier":
+        # Extend or set tier for 30 days from now (or from current expiry if still active)
+        user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
+        now = datetime.now(timezone.utc)
+        current_exp_str = user_doc.get("tier_expires_at")
+        base = now
+        if current_exp_str:
+            try:
+                cur = datetime.fromisoformat(current_exp_str)
+                if cur.tzinfo is None:
+                    cur = cur.replace(tzinfo=timezone.utc)
+                if cur > now and user_doc.get("tier") == pkg["tier"]:
+                    base = cur
+            except Exception:
+                pass
+        new_exp = (base + timedelta(days=30)).isoformat()
+        update = {"tier": pkg["tier"], "tier_expires_at": new_exp}
+        if pkg.get("credits", 0) > 0:
+            await db.users.update_one({"user_id": user_id}, {"$inc": {"credits": pkg["credits"]}})
+        await db.users.update_one({"user_id": user_id}, {"$set": update})
+
+    await db.payment_transactions.update_one(
+        {"session_id": session_id},
+        {"$set": {"granted": True, "granted_at": datetime.now(timezone.utc).isoformat()}},
+    )
+    return await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+
+
+@api_router.get("/billing/status/{session_id}")
+async def billing_status(session_id: str, request: Request,
+                          session_token: Optional[str] = Cookie(None),
+                          authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx or tx.get("user_id") != u.user_id:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    stripe_checkout = _stripe_client(request)
+    try:
+        status = await stripe_checkout.get_checkout_status(session_id)
+    except Exception as e:
+        logging.exception("stripe status fetch failed")
+        raise HTTPException(status_code=502, detail=f"Could not fetch status: {e}")
+
+    await db.payment_transactions.update_one(
+        {"session_id": session_id},
+        {"$set": {
+            "status": status.status,
+            "payment_status": status.payment_status,
+            "amount_total": status.amount_total,
+            "currency": status.currency,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    # Grant credits/tier if paid (idempotent)
+    if status.payment_status == "paid":
+        await _grant_if_paid(session_id)
+
+    fresh_user = await db.users.find_one({"user_id": u.user_id}, {"_id": 0}) or {}
+    return {
+        "session_id": session_id,
+        "status": status.status,
+        "payment_status": status.payment_status,
+        "amount_total": status.amount_total,
+        "currency": status.currency,
+        "package_id": tx.get("package_id"),
+        "credits": fresh_user.get("credits"),
+        "tier": get_effective_tier(User(**fresh_user)) if fresh_user else "free",
+    }
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature")
+    stripe_checkout = _stripe_client(request)
+    try:
+        evt = await stripe_checkout.handle_webhook(body, sig)
+    except Exception as e:
+        logging.exception("webhook verification failed")
+        raise HTTPException(status_code=400, detail=f"Invalid webhook: {e}")
+
+    if evt.session_id and evt.payment_status == "paid":
+        await db.payment_transactions.update_one(
+            {"session_id": evt.session_id},
+            {"$set": {"payment_status": "paid", "status": "complete", "webhook_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        await _grant_if_paid(evt.session_id)
+    return {"received": True}
 
 
 @api_router.get("/")

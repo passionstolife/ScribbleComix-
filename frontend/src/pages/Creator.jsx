@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { Wand2, Save, Image as ImageIcon, LayoutGrid, AlignJustify, Plus, Trash2, RefreshCw, Loader2, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
 
 const emptyPanel = () => ({
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2),
@@ -16,6 +17,7 @@ const emptyPanel = () => ({
 const Creator = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { fetchBilling } = useAuth();
     const [loadingComic, setLoadingComic] = useState(!!id);
     const [title, setTitle] = useState("Untitled Comic");
     const [synopsis, setSynopsis] = useState("");
@@ -70,24 +72,37 @@ const Creator = () => {
         try {
             const { data } = await api.post("/generate/panel-image", { prompt: panel.image_prompt });
             setPanels((ps) => ps.map(p => p.id === pid ? { ...p, image_base64: data.image_base64 } : p));
+            fetchBilling && fetchBilling();
         } catch (e) {
-            toast.error(e?.response?.data?.detail || "Image generation failed");
+            if (e?.response?.status === 402) {
+                toast.error("Out of credits — top up or upgrade.", { action: { label: "Plans", onClick: () => navigate('/billing') } });
+            } else {
+                toast.error(e?.response?.data?.detail || "Image generation failed");
+            }
         } finally {
             setImgLoadingId(null);
         }
     };
 
     const generateAllImages = async () => {
+        let outOfCredits = false;
         for (const p of panels) {
             if (!p.image_prompt) continue;
             setImgLoadingId(p.id);
             try {
                 const { data } = await api.post("/generate/panel-image", { prompt: p.image_prompt });
                 setPanels((ps) => ps.map(x => x.id === p.id ? { ...x, image_base64: data.image_base64 } : x));
-            } catch (e) { /* continue */ }
+            } catch (e) {
+                if (e?.response?.status === 402) { outOfCredits = true; break; }
+            }
         }
         setImgLoadingId(null);
-        toast.success("Sketches rendered!");
+        fetchBilling && fetchBilling();
+        if (outOfCredits) {
+            toast.error("Ran out of credits mid-way.", { action: { label: "Plans", onClick: () => navigate('/billing') } });
+        } else {
+            toast.success("Sketches rendered!");
+        }
     };
 
     const updatePanel = (pid, field, val) => {

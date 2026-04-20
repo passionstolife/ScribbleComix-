@@ -5,12 +5,24 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
+    const [billing, setBilling] = useState(null); // {credits, tier, tier_expires_at}
     const [loading, setLoading] = useState(true);
+
+    const fetchBilling = useCallback(async () => {
+        try {
+            const { data } = await api.get("/billing/me");
+            setBilling(data);
+        } catch (e) { /* ignore */ }
+    }, []);
 
     const checkAuth = useCallback(async () => {
         try {
             const { data } = await api.get("/auth/me");
             setUser(data);
+            try {
+                const bill = await api.get("/billing/me");
+                setBilling(bill.data);
+            } catch (e) { /* ignore */ }
         } catch (e) {
             setUser(null);
         } finally {
@@ -40,11 +52,12 @@ export const AuthProvider = ({ children }) => {
         } catch (e) { /* ignore */ }
         localStorage.removeItem("session_token");
         setUser(null);
+        setBilling(null);
         window.location.href = "/";
     };
 
     return (
-        <AuthContext.Provider value={{ user, setUser, loading, login, logout, refresh: checkAuth }}>
+        <AuthContext.Provider value={{ user, setUser, billing, fetchBilling, loading, login, logout, refresh: checkAuth }}>
             {children}
         </AuthContext.Provider>
     );
