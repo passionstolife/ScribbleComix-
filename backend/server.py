@@ -668,34 +668,38 @@ async def billing_status(session_id: str, request: Request,
     if not tx or tx.get("user_id") != u.user_id:
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    stripe_checkout = _stripe_client(request)
+    if not STRIPE_API_KEY:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
     try:
-        status = await stripe_checkout.get_checkout_status(session_id)
+        session = await stripe.checkout.Session.retrieve_async(session_id)
     except Exception as e:
         logging.exception("stripe status fetch failed")
         raise HTTPException(status_code=502, detail=f"Could not fetch status: {e}")
 
+    payment_status = session.payment_status  # 'paid' | 'unpaid' | 'no_payment_required'
+    status_val = session.status  # 'open' | 'complete' | 'expired'
+
     await db.payment_transactions.update_one(
         {"session_id": session_id},
         {"$set": {
-            "status": status.status,
-            "payment_status": status.payment_status,
-            "amount_total": status.amount_total,
-            "currency": status.currency,
+            "status": status_val,
+            "payment_status": payment_status,
+            "amount_total": session.amount_total,
+            "currency": session.currency,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }},
     )
     # Grant credits/tier if paid (idempotent)
-    if status.payment_status == "paid":
+    if payment_status == "paid":
         await _grant_if_paid(session_id)
 
     fresh_user = await db.users.find_one({"user_id": u.user_id}, {"_id": 0}) or {}
     return {
         "session_id": session_id,
-        "status": status.status,
-        "payment_status": status.payment_status,
-        "amount_total": status.amount_total,
-        "currency": status.currency,
+        "status": status_val,
+        "payment_status": payment_status,
+        "amount_total": session.amount_total,
+        "currency": session.currency,
         "package_id": tx.get("package_id"),
         "credits": fresh_user.get("credits"),
         "tier": get_effective_tier(User(**fresh_user)) if fresh_user else "free",
