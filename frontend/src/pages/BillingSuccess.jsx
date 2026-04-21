@@ -3,6 +3,7 @@ import Navbar from "../components/Navbar";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { CheckCircle2, Loader2, XCircle, AlertCircle } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 const MAX_ATTEMPTS = 10;
 const INTERVAL_MS = 2000;
@@ -10,6 +11,7 @@ const INTERVAL_MS = 2000;
 const BillingSuccess = () => {
     const [sp] = useSearchParams();
     const navigate = useNavigate();
+    const { fetchBilling } = useAuth();
     const sessionId = sp.get("session_id");
     const [phase, setPhase] = useState("checking"); // checking | paid | expired | error
     const [info, setInfo] = useState(null);
@@ -24,7 +26,11 @@ const BillingSuccess = () => {
             try {
                 const { data } = await api.get(`/billing/status/${sessionId}`);
                 setInfo(data);
-                if (data.payment_status === "paid") { setPhase("paid"); return; }
+                if (data.payment_status === "paid") {
+                    setPhase("paid");
+                    fetchBilling && fetchBilling();  // refresh Navbar credits/tier chip
+                    return;
+                }
                 if (data.status === "expired") { setPhase("expired"); return; }
             } catch (e) {
                 if (attempts.current >= MAX_ATTEMPTS) { setPhase("error"); return; }
@@ -35,7 +41,7 @@ const BillingSuccess = () => {
         };
         poll();
         return () => { cancelled = true; };
-    }, [sessionId]);
+    }, [sessionId, fetchBilling]);
 
     return (
         <div className="min-h-screen" data-testid="billing-success-page">
