@@ -120,7 +120,7 @@ export const TierBadge = ({ tier = "bronze", rank = "Novice", size = 56 }) => {
     const c = TIER_COLORS[tier] || TIER_COLORS.bronze;
     return (
         <div className="inline-flex flex-col items-center gap-1" data-testid={`tier-badge-${tier}`}>
-            <svg viewBox="0 0 80 80" width={size} height={size}>
+            <svg viewBox="0 0 80 80" width={size} height={size} data-testid={`tier-badge-svg-${tier}`}>
                 {/* laurel left */}
                 <g fill="none" stroke="#111" strokeWidth="2" strokeLinecap="round">
                     <path d="M14 36 Q10 24 18 14 Q22 22 20 30" />
