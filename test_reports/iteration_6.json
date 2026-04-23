@@ -1,0 +1,44 @@
+{
+  "summary": "Iteration 6 (admin/founder roles, XP, achievements, profile, admin endpoints) fully validated. 24/24 new backend tests + full frontend flow (profile founder/public, admin founder/free, navbar role badge + admin shield) pass. 3 pre-existing iteration-5 tests now fail because STRIPE_PRICE_PRO/ULTIMATE env vars were added between iterations — those assertions need updating, not a regression in iter6.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/promote", "issue": "find_one lowercases the incoming email but DB may store mixed-case emails (if OAuth ever returns mixed-case); promote would 404. Consider storing emails lowercased at signup or using a case-insensitive regex match on promote."},
+      {"endpoint": "/api/admin/users", "issue": "Projection includes role/tier but old users (pre-schema) without these fields will be missing them in the response. Projection-safe but frontend must render 'free'/'free' fallback. The backfill happens only on re-login."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Profile.jsx", "issue": "No element with data-testid='tier-badge-ultimate' rendered on founder profile. Laurel medallion 'Sketch Novice' shown (level badge) but no distinct tier badge with the expected testid. Request spec mentions TierBadge should be a 'laurel medallion' — ensure Badges.jsx TierBadge is imported + rendered with the testid (or update the spec).", "selector": "[data-testid='tier-badge-ultimate']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_roles_xp_profile.py",
+    "/app/test_reports/pytest/iter6_roles_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL: Add data-testid='tier-badge-ultimate' (or appropriate tier) to the TierBadge component rendered on /profile so frontend tests can assert tier visually.",
+    "OPTIONAL: Update iteration-5 tests (test_share_and_subscribe.py::TestSubscriptionsConfig/TestSubscribe) — they assert recurring_enabled=False, but STRIPE_PRICE_PRO/ULTIMATE are now configured in .env, so subscribe returns 200 and config returns true. Either unset those env vars for tests or flip the assertions based on env.",
+    "OPTIONAL: Case-insensitive email lookup in /api/admin/promote for robustness."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now 1157 lines — exceeds the 700-line split threshold substantially. Strongly recommend extracting: billing (checkout/subscribe/portal/webhook/_grant_if_paid) → billing.py, sharing (share/unshare/public) → sharing.py, XP/achievements (_award_xp/_unlock_achievement/_check_achievements + /profile/*) → gamification.py, admin → admin.py. Current monolith hurts maintainability and testability.",
+    "FOUNDER_EMAILS and CO_FOUNDER_EMAILS are hard-coded at module level. Consider loading from env (FOUNDER_EMAILS_CSV) so production can add seed founders without code changes.",
+    "_check_achievements is called on many write paths but not transactional — if the DB hiccups mid-achievement-check, we silently miss an unlock. Low-risk because _check_achievements is re-entrant (idempotent) and called again on next /profile/me.",
+    "role_for_email returns tuple (role, unlimited). If a user is promoted to 'promoter' via /admin/promote and later signs in again, the /auth/session handler only re-applies founder/co_founder (not promoter), but it also doesn't overwrite a 'promoter' role — so state is preserved. Good. But worth adding an explicit comment in create_session.",
+    "/api/admin/users returns ALL users with no pagination. At scale (>500) this will truncate silently due to .to_list(500). Add skip/limit query params.",
+    "Profile.jsx tier badge: data-testid='tier-badge-ultimate' was requested in iteration spec but not emitted — minor."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_roles_xp_profile.py"
+  ],
+  "success_rate": {"backend": "24/24 iteration-6 (100%); 66/69 overall (3 pre-existing iter5 tests stale due to env change)", "frontend": "100% — founder profile, public profile (no auth, private fields hidden), founder admin (user table + promote form), free user gated by 'Founders only', navbar shield + role badge for founder, none for free"},
+  "test_credentials": "Backend tests auto-seed via MongoDB: passionstolife@gmail.com (founder, user_id=user_b2b30b44f107), cachetito1966@gmail.com (co_founder), test_regular_iter6@example.com (free, xp=10 signup). Frontend: localStorage session_token='test_iter6_founder_fe' (founder), 'test_iter6_free_fe' (FE free user user_fe_free_6ef1dty7).",
+  "seed_data_creation": "Seeded via MongoDB: 3 users (founder/co_founder/free) + 3 sessions (test_iter6_*). Fixture auto-cleans test_regular_iter6 and test_promote_target_iter6 users/comics/sessions. Founder (passionstolife@gmail.com) and co-founder (cachetito1966@gmail.com) records preserved — they match FOUNDER_EMAILS allowlist so leaving them is safe and expected. FE-only session test_iter6_free_fe left in DB (inconsequential). Also spun up + consumed a TEST_zero_credits_iter6 user that auto-cleans in its test method.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All iter6 backend endpoints verified. For future FE testing, use session_token='test_iter6_founder_fe' (founder, user_b2b30b44f107) — still alive in DB. Founder email passionstolife@gmail.com + co-founder cachetito1966@gmail.com records now exist permanently (they match the allowlist). Three iter5 Stripe-subscription tests are stale because env now has STRIPE_PRICE_PRO/ULTIMATE set — main agent should decide whether to keep recurring enabled or unset those in .env for test determinism. tier-badge-ultimate testid missing on /profile — low-priority cosmetic addition. server.py is now 1157 lines — high priority to split.",
+  "rca of the issue": "N/A — all iter6 features working. Sole UI miss: Profile.jsx doesn't emit data-testid='tier-badge-ultimate' on the tier badge (if one is rendered). Mitigation: locate <TierBadge> in Profile.jsx and add data-testid={`tier-badge-${tier}`} prop, or add it inside Badges.jsx TierBadge's root element."
+}

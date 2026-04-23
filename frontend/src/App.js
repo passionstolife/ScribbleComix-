@@ -11,6 +11,8 @@ import Reader from "./pages/Reader";
 import Billing from "./pages/Billing";
 import BillingSuccess from "./pages/BillingSuccess";
 import PublicReader from "./pages/PublicReader";
+import Profile from "./pages/Profile";
+import Admin from "./pages/Admin";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const AppRouter = () => {
@@ -28,6 +30,9 @@ const AppRouter = () => {
             <Route path="/comic/:id" element={<ProtectedRoute><Reader /></ProtectedRoute>} />
             <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
             <Route path="/billing/success" element={<ProtectedRoute><BillingSuccess /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+            <Route path="/profile/:userId" element={<Profile />} />
+            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
             <Route path="/read/:shareId" element={<PublicReader />} />
             <Route path="*" element={<Landing />} />
         </Routes>

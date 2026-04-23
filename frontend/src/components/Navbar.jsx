@@ -1,7 +1,8 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { BookOpenCheck, LogOut, PenLine, Sparkles, Crown, Coins } from "lucide-react";
+import { BookOpenCheck, LogOut, PenLine, Sparkles, Crown, Coins, User as UserIcon, Shield } from "lucide-react";
+import { RoleBadge } from "./Badges";
 
 export const Navbar = () => {
     const { user, billing, login, logout } = useAuth();
@@ -9,6 +10,9 @@ export const Navbar = () => {
 
     const tier = billing?.tier || "free";
     const credits = billing?.credits ?? 0;
+    const role = user?.role;
+    const unlimited = user?.unlimited;
+    const isAdmin = role === "founder" || role === "co_founder";
 
     return (
         <header className="relative z-10 border-b-2 border-ink bg-paper" data-testid="app-navbar">
@@ -32,17 +36,28 @@ export const Navbar = () => {
                                 className="inline-flex items-center gap-1.5 px-3 py-2 border-2 border-ink bg-highlight text-ink rounded-sm font-display font-bold text-sm shadow-ink-sm hover:-translate-y-0.5 transition-transform"
                                 title="View plans & credits"
                             >
-                                {tier === "ultimate" ? <Crown size={14} strokeWidth={2.5}/> : <Coins size={14} strokeWidth={2.5}/>}
-                                {tier === "ultimate" ? "Ultimate" : (tier === "pro" ? `Pro · ${credits}` : credits)}
+                                {unlimited ? <Crown size={14} strokeWidth={2.5}/> : (tier === "ultimate" ? <Crown size={14} strokeWidth={2.5}/> : <Coins size={14} strokeWidth={2.5}/>)}
+                                {unlimited ? "∞" : (tier === "ultimate" ? "Ultimate" : (tier === "pro" ? `Pro · ${credits}` : credits))}
                             </button>
-                            <div className="hidden md:flex items-center gap-2 px-2 py-1 border-2 border-ink bg-white rounded-sm shadow-ink-sm" data-testid="nav-user-chip">
+                            {isAdmin && (
+                                <button data-testid="nav-admin" onClick={() => navigate('/admin')} className="btn-ink !py-2 !px-3 text-sm inline-flex items-center gap-1" title="Admin dashboard">
+                                    <Shield size={14} strokeWidth={2.5}/>
+                                </button>
+                            )}
+                            <button
+                                data-testid="nav-profile"
+                                onClick={() => navigate('/profile')}
+                                className="hidden md:flex items-center gap-2 px-2 py-1 border-2 border-ink bg-white rounded-sm shadow-ink-sm hover:-translate-y-0.5 transition-transform"
+                                title="Your profile"
+                            >
                                 {user.picture ? (
                                     <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full border border-ink" />
                                 ) : (
                                     <div className="w-7 h-7 rounded-full bg-highlight border border-ink grid place-items-center font-bold text-xs">{user.name?.[0] || "U"}</div>
                                 )}
                                 <span className="font-display font-semibold text-sm max-w-[120px] truncate">{user.name}</span>
-                            </div>
+                                {role && role !== "free" && <RoleBadge role={role} size={20} />}
+                            </button>
                             <button data-testid="nav-logout" onClick={logout} className="btn-ink !py-2 !px-3 text-sm inline-flex items-center gap-1" title="Log out">
                                 <LogOut size={16} strokeWidth={2.5}/>
                             </button>

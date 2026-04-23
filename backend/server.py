@@ -38,6 +38,78 @@ if STRIPE_API_KEY:
 # Note: pricing and credits are fixed server-side. Frontend cannot alter.
 FREE_SIGNUP_CREDITS = 20
 
+# Admin / role seeding. These users automatically receive founder/co_founder role
+# with unlimited credits and ultimate tier for 100 years on first login.
+FOUNDER_EMAILS = {
+    "passionstolife@gmail.com",  # Founder (you)
+}
+CO_FOUNDER_EMAILS = {
+    "cachetito1966@gmail.com",
+    "ramonfloridarican12@gmail.com",
+    # Roxy's email added later via /api/admin/promote when she joins
+}
+
+# XP awarded per action (tunable)
+XP_REWARDS = {
+    "signup": 10,
+    "first_comic": 50,
+    "comic_created": 20,
+    "comic_shared": 15,
+    "comic_made_public": 10,
+    "panel_sketched": 2,
+    "subscribed_pro": 100,
+    "subscribed_ultimate": 250,
+    "credit_pack_purchased": 50,
+    "got_5_likes": 25,  # future
+}
+
+# XP thresholds per level → also maps to badge tier
+LEVEL_THRESHOLDS = [
+    (1, 0,     "bronze",   "Sketch Novice"),
+    (2, 50,    "bronze",   "Sketch Novice"),
+    (3, 150,   "silver",   "Ink Apprentice"),
+    (4, 350,   "silver",   "Ink Apprentice"),
+    (5, 700,   "gold",     "Pen Artisan"),
+    (6, 1200,  "gold",     "Pen Artisan"),
+    (7, 2000,  "platinum", "Panel Master"),
+    (8, 3200,  "platinum", "Panel Master"),
+    (9, 5000,  "diamond",  "Comic Legend"),
+    (10, 8000, "diamond",  "Comic Legend"),
+]
+
+# Achievements catalog
+ACHIEVEMENTS = {
+    "first_steps":       {"title": "First Steps",       "desc": "Created your first comic",              "icon": "seal_boom",    "color": "highlight"},
+    "published_author":  {"title": "Published Author",  "desc": "Shared 3 comics publicly",               "icon": "seal_zap",     "color": "hotpink"},
+    "serial_creator":    {"title": "Serial Creator",    "desc": "Created 10 comics",                      "icon": "seal_pow",     "color": "marker"},
+    "ink_master":        {"title": "Ink Master",        "desc": "Sketched 50 panels",                     "icon": "seal_amazing", "color": "gold"},
+    "supporter":         {"title": "Supporter",         "desc": "Purchased your first credit pack",       "icon": "seal_heart",   "color": "hotpink"},
+    "pro_ink":           {"title": "Pro Ink",           "desc": "Became a Pro subscriber",                "icon": "seal_star",    "color": "highlight"},
+    "ultimate_legend":   {"title": "Ultimate Legend",   "desc": "Became an Ultimate subscriber",          "icon": "seal_crown",   "color": "gold"},
+    "story_spinner":     {"title": "Story Spinner",     "desc": "Generated 5 AI stories",                 "icon": "seal_wow",     "color": "marker"},
+    "share_champion":    {"title": "Share Champion",    "desc": "Your comic link was copied 10+ times",   "icon": "seal_whoa",    "color": "hotpink"},
+    "night_owl":         {"title": "Night Owl",         "desc": "Created a comic after midnight",         "icon": "seal_moon",    "color": "marker"},
+}
+
+
+def role_for_email(email: str) -> tuple[str, bool]:
+    """Returns (role, unlimited) based on email allowlist."""
+    e = (email or "").strip().lower()
+    if e in {x.lower() for x in FOUNDER_EMAILS}:
+        return "founder", True
+    if e in {x.lower() for x in CO_FOUNDER_EMAILS}:
+        return "co_founder", True
+    return "free", False
+
+
+def compute_level(xp: int) -> tuple[int, str, str]:
+    """Given XP, return (level, tier_color, rank_title)."""
+    current = LEVEL_THRESHOLDS[0]
+    for entry in LEVEL_THRESHOLDS:
+        if xp >= entry[1]:
+            current = entry
+    return current[0], current[2], current[3]
+
 PACKAGES: Dict[str, Dict] = {
     # Credit packs (one-time)
     "pack_small":  {"kind": "credits", "label": "Starter Pack",  "amount": 3.99,  "credits": 50,  "desc": "50 sketch credits"},
@@ -61,6 +133,11 @@ class User(BaseModel):
     credits: int = 0
     tier: Literal["free", "pro", "ultimate"] = "free"
     tier_expires_at: Optional[str] = None
+    role: Literal["founder", "co_founder", "promoter", "ultimate", "pro", "free"] = "free"
+    xp: int = 0
+    level: int = 1
+    achievements: List[str] = Field(default_factory=list)
+    unlimited: bool = False  # founders/promoters/co-founders bypass credit checks
 
 
 class Panel(BaseModel):
@@ -180,28 +257,42 @@ async def create_session(request: Request, response: Response):
 
     email = data["email"]
     existing = await db.users.find_one({"email": email}, {"_id": 0})
+    role, is_unlimited = role_for_email(email)
     if existing:
         user_id = existing["user_id"]
-        await db.users.update_one(
-            {"user_id": user_id},
-            {"$set": {"name": data.get("name"), "picture": data.get("picture")}},
-        )
+        update_fields = {"name": data.get("name"), "picture": data.get("picture")}
+        # Always re-apply founder/co_founder from allowlist (covers future promotions)
+        if role in ("founder", "co_founder"):
+            update_fields["role"] = role
+            update_fields["unlimited"] = True
+            update_fields["tier"] = "ultimate"
+            update_fields["tier_expires_at"] = (datetime.now(timezone.utc) + timedelta(days=365 * 100)).isoformat()
+        await db.users.update_one({"user_id": user_id}, {"$set": update_fields})
         # Backfill missing fields for old users
-        if "credits" not in existing:
-            await db.users.update_one(
-                {"user_id": user_id},
-                {"$set": {"credits": FREE_SIGNUP_CREDITS, "tier": "free"}},
-            )
+        backfill = {}
+        for k, v in [("credits", FREE_SIGNUP_CREDITS), ("tier", "free"), ("role", "free"),
+                     ("xp", 0), ("level", 1), ("achievements", []), ("unlimited", False)]:
+            if k not in existing:
+                backfill[k] = v
+        if backfill:
+            await db.users.update_one({"user_id": user_id}, {"$set": backfill})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
+        is_ultimate_on_signup = role in ("founder", "co_founder")
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "name": data.get("name", ""),
             "picture": data.get("picture", ""),
             "credits": FREE_SIGNUP_CREDITS,
-            "tier": "free",
-            "tier_expires_at": None,
+            "tier": "ultimate" if is_ultimate_on_signup else "free",
+            "tier_expires_at": ((datetime.now(timezone.utc) + timedelta(days=365 * 100)).isoformat()
+                                 if is_ultimate_on_signup else None),
+            "role": role,
+            "unlimited": is_unlimited,
+            "xp": XP_REWARDS["signup"],
+            "level": 1,
+            "achievements": [],
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
 
@@ -324,9 +415,9 @@ async def generate_panel_image(
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="LLM key not configured")
 
-    # Credit / tier gating
+    # Credit / tier gating — unlimited users (founders/co_founders/promoters) bypass entirely
     effective_tier = get_effective_tier(u)
-    if effective_tier != "ultimate":
+    if not u.unlimited and effective_tier != "ultimate":
         if (u.credits or 0) < 1:
             raise HTTPException(
                 status_code=402,
@@ -364,11 +455,14 @@ async def generate_panel_image(
     if not images:
         raise HTTPException(status_code=502, detail="No image returned")
 
-    # Deduct credit after success (ultimate users don't)
+    # Deduct credit after success (ultimate / unlimited users don't)
     remaining = u.credits
-    if effective_tier != "ultimate":
+    if not u.unlimited and effective_tier != "ultimate":
         await db.users.update_one({"user_id": u.user_id}, {"$inc": {"credits": -1}})
         remaining = max(0, (u.credits or 0) - 1)
+
+    # XP for every sketched panel
+    await _award_xp(u.user_id, "panel_sketched")
 
     img = images[0]
     mime = img.get("mime_type", "image/png")
@@ -393,6 +487,8 @@ async def create_comic(body: CreateComicRequest, request: Request,
                         authorization: Optional[str] = Header(None)):
     u = await get_current_user(request, session_token, authorization)
     now = datetime.now(timezone.utc).isoformat()
+    # First-comic bonus
+    existing_count = await db.comics.count_documents({"user_id": u.user_id})
     comic = Comic(
         comic_id=f"comic_{uuid.uuid4().hex[:12]}",
         user_id=u.user_id,
@@ -404,6 +500,9 @@ async def create_comic(body: CreateComicRequest, request: Request,
         updated_at=now,
     )
     await db.comics.insert_one(comic.model_dump())
+    # XP + achievements
+    await _award_xp(u.user_id, "first_comic" if existing_count == 0 else "comic_created")
+    await _check_achievements(u.user_id)
     return comic
 
 
@@ -455,10 +554,14 @@ async def enable_share(comic_id: str, request: Request,
     if not doc:
         raise HTTPException(status_code=404, detail="Comic not found")
     share_id = doc.get("share_id") or f"s_{uuid.uuid4().hex[:10]}"
+    newly_public = not doc.get("is_public", False)
     await db.comics.update_one(
         {"comic_id": comic_id},
         {"$set": {"share_id": share_id, "is_public": True, "author_name": u.name}},
     )
+    if newly_public:
+        await _award_xp(u.user_id, "comic_made_public")
+        await _check_achievements(u.user_id)
     return {"share_id": share_id, "is_public": True}
 
 
@@ -631,6 +734,7 @@ async def _grant_if_paid(session_id: str) -> dict:
     update: Dict = {}
     if pkg["kind"] == "credits":
         await db.users.update_one({"user_id": user_id}, {"$inc": {"credits": pkg["credits"]}})
+        await _award_xp(user_id, "credit_pack_purchased")
     elif pkg["kind"] == "tier":
         # Extend or set tier for 30 days from now (or from current expiry if still active)
         user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
@@ -651,6 +755,12 @@ async def _grant_if_paid(session_id: str) -> dict:
         if pkg.get("credits", 0) > 0:
             await db.users.update_one({"user_id": user_id}, {"$inc": {"credits": pkg["credits"]}})
         await db.users.update_one({"user_id": user_id}, {"$set": update})
+        # Tier XP
+        if pkg.get("tier") == "ultimate":
+            await _award_xp(user_id, "subscribed_ultimate")
+        elif pkg.get("tier") == "pro":
+            await _award_xp(user_id, "subscribed_pro")
+        await _check_achievements(user_id)
 
     await db.payment_transactions.update_one(
         {"session_id": session_id},
@@ -834,6 +944,191 @@ async def customer_portal(request: Request,
         logging.exception("portal failed")
         raise HTTPException(status_code=502, detail=f"Could not open portal: {e}")
     return {"url": portal.url}
+
+
+# ================= XP, LEVELS, ACHIEVEMENTS =================
+async def _award_xp(user_id: str, event: str, amount: Optional[int] = None) -> dict:
+    """Grant XP for an event, update level, record side effects. Returns dict of what changed."""
+    gained = amount if amount is not None else XP_REWARDS.get(event, 0)
+    if gained <= 0:
+        return {"gained": 0}
+    doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not doc:
+        return {"gained": 0}
+    old_xp = doc.get("xp", 0)
+    new_xp = old_xp + gained
+    old_level, _, _ = compute_level(old_xp)
+    new_level, _, _ = compute_level(new_xp)
+    await db.users.update_one({"user_id": user_id}, {"$set": {"xp": new_xp, "level": new_level}})
+    return {"gained": gained, "xp": new_xp, "level": new_level, "leveled_up": new_level > old_level}
+
+
+async def _unlock_achievement(user_id: str, key: str) -> bool:
+    """Idempotently unlock an achievement. Returns True if newly unlocked."""
+    if key not in ACHIEVEMENTS:
+        return False
+    result = await db.users.update_one(
+        {"user_id": user_id, "achievements": {"$ne": key}},
+        {"$addToSet": {"achievements": key}},
+    )
+    return result.modified_count > 0
+
+
+async def _check_achievements(user_id: str):
+    """Evaluate common achievements after an event. Cheap + safe to call often."""
+    doc = await db.users.find_one({"user_id": user_id}, {"_id": 0}) or {}
+    already = set(doc.get("achievements", []))
+    # first_steps
+    if "first_steps" not in already:
+        n = await db.comics.count_documents({"user_id": user_id})
+        if n >= 1:
+            await _unlock_achievement(user_id, "first_steps")
+    # serial_creator
+    if "serial_creator" not in already:
+        n = await db.comics.count_documents({"user_id": user_id})
+        if n >= 10:
+            await _unlock_achievement(user_id, "serial_creator")
+    # published_author
+    if "published_author" not in already:
+        n = await db.comics.count_documents({"user_id": user_id, "is_public": True})
+        if n >= 3:
+            await _unlock_achievement(user_id, "published_author")
+    # ink_master — count panels with images across all user comics
+    if "ink_master" not in already:
+        agg = await db.comics.aggregate([
+            {"$match": {"user_id": user_id}},
+            {"$unwind": "$panels"},
+            {"$match": {"panels.image_base64": {"$ne": None}}},
+            {"$count": "n"},
+        ]).to_list(1)
+        if agg and agg[0].get("n", 0) >= 50:
+            await _unlock_achievement(user_id, "ink_master")
+    # pro_ink / ultimate_legend
+    tier = get_effective_tier(User(**{**doc, "achievements": doc.get("achievements", [])}))
+    if tier in ("pro", "ultimate") and "pro_ink" not in already:
+        await _unlock_achievement(user_id, "pro_ink")
+    if tier == "ultimate" and "ultimate_legend" not in already:
+        await _unlock_achievement(user_id, "ultimate_legend")
+    # night_owl — last comic created between 00:00–04:00 local-UTC
+    if "night_owl" not in already:
+        latest = await db.comics.find_one(
+            {"user_id": user_id},
+            {"_id": 0, "created_at": 1},
+            sort=[("created_at", -1)],
+        )
+        if latest and latest.get("created_at"):
+            try:
+                hr = datetime.fromisoformat(latest["created_at"]).hour
+                if 0 <= hr < 5:
+                    await _unlock_achievement(user_id, "night_owl")
+            except Exception:
+                pass
+    # supporter
+    if "supporter" not in already:
+        paid = await db.payment_transactions.count_documents(
+            {"user_id": user_id, "payment_status": "paid", "kind": "credits"}
+        )
+        if paid >= 1:
+            await _unlock_achievement(user_id, "supporter")
+
+
+@api_router.get("/profile/me")
+async def my_profile(request: Request,
+                      session_token: Optional[str] = Cookie(None),
+                      authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    await _check_achievements(u.user_id)
+    fresh = await db.users.find_one({"user_id": u.user_id}, {"_id": 0}) or {}
+    level, tier_color, rank_title = compute_level(fresh.get("xp", 0))
+    # Compute XP progress to next level
+    cur_thresh = next_thresh = 0
+    for entry in LEVEL_THRESHOLDS:
+        if entry[0] == level:
+            cur_thresh = entry[1]
+        if entry[0] == level + 1:
+            next_thresh = entry[1]
+    comics_count = await db.comics.count_documents({"user_id": u.user_id})
+    public_count = await db.comics.count_documents({"user_id": u.user_id, "is_public": True})
+    return {
+        "user_id": fresh["user_id"],
+        "name": fresh.get("name"),
+        "email": fresh.get("email"),
+        "picture": fresh.get("picture"),
+        "role": fresh.get("role", "free"),
+        "tier": get_effective_tier(User(**fresh)),
+        "credits": fresh.get("credits", 0),
+        "unlimited": bool(fresh.get("unlimited")),
+        "xp": fresh.get("xp", 0),
+        "level": level,
+        "tier_color": tier_color,
+        "rank_title": rank_title,
+        "xp_current_threshold": cur_thresh,
+        "xp_next_threshold": next_thresh or cur_thresh,
+        "achievements": fresh.get("achievements", []),
+        "achievements_catalog": ACHIEVEMENTS,
+        "stats": {
+            "comics": comics_count,
+            "public_comics": public_count,
+        },
+    }
+
+
+@api_router.get("/profile/public/{user_id}")
+async def public_profile(user_id: str):
+    fresh = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+    if not fresh:
+        raise HTTPException(status_code=404, detail="User not found")
+    level, tier_color, rank_title = compute_level(fresh.get("xp", 0))
+    public_count = await db.comics.count_documents({"user_id": user_id, "is_public": True})
+    return {
+        "user_id": fresh["user_id"],
+        "name": fresh.get("name"),
+        "picture": fresh.get("picture"),
+        "role": fresh.get("role", "free"),
+        "level": level,
+        "tier_color": tier_color,
+        "rank_title": rank_title,
+        "xp": fresh.get("xp", 0),
+        "achievements": fresh.get("achievements", []),
+        "achievements_catalog": ACHIEVEMENTS,
+        "stats": {"public_comics": public_count},
+    }
+
+
+# ================= ADMIN =================
+class PromoteBody(BaseModel):
+    email: str
+    role: Literal["promoter", "co_founder", "ultimate", "pro", "free"]
+
+
+@api_router.post("/admin/promote")
+async def admin_promote(body: PromoteBody, request: Request,
+                         session_token: Optional[str] = Cookie(None),
+                         authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if u.role not in ("founder", "co_founder"):
+        raise HTTPException(status_code=403, detail="Founder/co-founder access only")
+    target = await db.users.find_one({"email": body.email.strip().lower()}, {"_id": 0})
+    if not target:
+        raise HTTPException(status_code=404, detail="That user hasn't signed up yet")
+    unlimited = body.role in ("founder", "co_founder", "promoter")
+    updates = {"role": body.role, "unlimited": unlimited}
+    if unlimited:
+        updates["tier"] = "ultimate"
+        updates["tier_expires_at"] = (datetime.now(timezone.utc) + timedelta(days=365 * 100)).isoformat()
+    await db.users.update_one({"user_id": target["user_id"]}, {"$set": updates})
+    return {"ok": True, "user_id": target["user_id"], "role": body.role, "unlimited": unlimited}
+
+
+@api_router.get("/admin/users")
+async def admin_users(request: Request,
+                       session_token: Optional[str] = Cookie(None),
+                       authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if u.role not in ("founder", "co_founder"):
+        raise HTTPException(status_code=403, detail="Founder/co-founder access only")
+    docs = await db.users.find({}, {"_id": 0, "email": 1, "name": 1, "user_id": 1, "role": 1, "tier": 1, "credits": 1, "xp": 1, "level": 1, "created_at": 1}).sort("created_at", -1).to_list(500)
+    return {"users": docs, "total": len(docs)}
 
 
 @api_router.get("/")
