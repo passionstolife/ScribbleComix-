@@ -216,3 +216,120 @@ export const AchievementSeal = ({ icon = "seal_boom", color = "highlight", size 
 };
 
 export default RoleBadge;
+
+/**
+ * MilestoneBadge — progressive trophy-bookshelf badges for # of comics created.
+ * Tiers: 1 → bronze quill, 3 → copper pen, 7 → silver scroll, 12 → gold book,
+ *        20 → platinum trophy, 50 → rainbow legend crown.
+ * Each badge is a unique hand-drawn SVG with cute personality.
+ */
+export const MILESTONES = [
+    { min: 1,  key: "sketch_starter",   title: "Sketch Starter",     color: "#C87533", shine: "#E8A06B", icon: "quill" },
+    { min: 3,  key: "budding_author",   title: "Budding Author",     color: "#B87333", shine: "#E0A872", icon: "pencils" },
+    { min: 7,  key: "story_weaver",     title: "Story Weaver",       color: "#C8C8D0", shine: "#F0F0F6", icon: "scroll" },
+    { min: 12, key: "panel_master",     title: "Panel Master",       color: "#FFD700", shine: "#FFF5A0", icon: "book" },
+    { min: 20, key: "ink_virtuoso",     title: "Ink Virtuoso",       color: "#9FE7E7", shine: "#D6FAFA", icon: "trophy" },
+    { min: 50, key: "legendary_creator", title: "Legendary Creator", color: "#FF7AB6", shine: "#FFE0EE", icon: "crown_star" },
+];
+
+const MilestoneIcon = ({ icon, accent = "#111" }) => {
+    if (icon === "quill") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 44 Q28 30 44 18 Q46 24 42 32 Q34 40 26 46 Z" fill="#FDFBF7" />
+            <path d="M20 44 L16 50" />
+            <path d="M30 30 L34 34" />
+        </g>
+    );
+    if (icon === "pencils") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 46 L36 28 L40 32 L22 50 Z" fill="#FFE600" />
+            <path d="M36 28 L40 32" />
+            <path d="M22 38 L38 22 L42 26 L26 42 Z" fill="#FF7AB6" />
+            <path d="M18 46 L15 52 L22 50" />
+        </g>
+    );
+    if (icon === "scroll") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="16" y="18" width="28" height="24" rx="3" fill="#FDFBF7" />
+            <line x1="22" y1="26" x2="38" y2="26" />
+            <line x1="22" y1="32" x2="38" y2="32" />
+            <line x1="22" y1="38" x2="32" y2="38" />
+            <circle cx="16" cy="18" r="3" fill={accent} />
+            <circle cx="44" cy="42" r="3" fill={accent} />
+        </g>
+    );
+    if (icon === "book") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 18 Q14 16 16 16 L28 16 Q30 18 30 20 L30 46 Q28 44 26 44 L16 44 Q14 44 14 46 Z" fill="#FDFBF7" />
+            <path d="M30 20 Q30 18 32 16 L44 16 Q46 16 46 18 L46 46 Q46 44 44 44 L34 44 Q32 44 30 46 Z" fill="#FDFBF7" />
+            <line x1="18" y1="24" x2="26" y2="24" />
+            <line x1="18" y1="30" x2="26" y2="30" />
+            <line x1="34" y1="24" x2="42" y2="24" />
+            <line x1="34" y1="30" x2="42" y2="30" />
+            <path d="M30 16 L30 46" />
+        </g>
+    );
+    if (icon === "trophy") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 14 L38 14 L38 26 Q38 34 30 36 Q22 34 22 26 Z" fill="#FFD700" />
+            <path d="M22 18 Q14 18 14 24 Q14 28 20 30" />
+            <path d="M38 18 Q46 18 46 24 Q46 28 40 30" />
+            <line x1="30" y1="36" x2="30" y2="44" />
+            <path d="M24 44 L36 44 L34 48 L26 48 Z" fill="#FDFBF7" />
+            <path d="M27 22 L30 26 L33 22" />
+        </g>
+    );
+    if (icon === "crown_star") return (
+        <g fill="none" stroke={accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 36 L20 20 L26 30 L30 14 L34 30 L40 20 L44 36 Z" fill="#FFE600" />
+            <line x1="16" y1="42" x2="44" y2="42" />
+            <circle cx="20" cy="20" r="2" fill="#FF007F" stroke="none" />
+            <circle cx="30" cy="14" r="2.5" fill="#0057FF" stroke="none" />
+            <circle cx="40" cy="20" r="2" fill="#FF007F" stroke="none" />
+            <path d="M30 48 L31 51 L34 51 L31.5 53 L32.5 56 L30 54 L27.5 56 L28.5 53 L26 51 L29 51 Z" fill="#111" />
+        </g>
+    );
+    return null;
+};
+
+export const MilestoneBadge = ({ milestone, size = 96, unlocked = true }) => {
+    const m = typeof milestone === "object" ? milestone : MILESTONES.find((x) => x.key === milestone);
+    if (!m) return null;
+    return (
+        <div
+            style={{ width: size }}
+            className={`inline-flex flex-col items-center gap-1.5 ${unlocked ? "" : "opacity-35 grayscale"}`}
+            data-testid={`milestone-${m.key}`}
+            title={`${m.title} — ${m.min}+ comics`}
+        >
+            <svg viewBox="0 0 72 72" width={size} height={size}>
+                {/* outer ribbon-star scalloped frame */}
+                <path
+                    d="M36 4 L42 10 L50 8 L52 16 L60 20 L58 28 L64 36 L58 44 L60 52 L52 56 L50 64 L42 62 L36 68 L30 62 L22 64 L20 56 L12 52 L14 44 L8 36 L14 28 L12 20 L20 16 L22 8 L30 10 Z"
+                    fill={unlocked ? m.color : "#FDFBF7"}
+                    stroke="#111"
+                    strokeWidth="2.2"
+                    strokeLinejoin="round"
+                />
+                {/* inner halftone disc */}
+                <defs>
+                    <pattern id={`ms-dots-${m.key}`} width="5" height="5" patternUnits="userSpaceOnUse">
+                        <circle cx="1.2" cy="1.2" r="0.8" fill="#111" opacity="0.12" />
+                    </pattern>
+                </defs>
+                <circle cx="36" cy="36" r="22" fill="#FDFBF7" stroke="#111" strokeWidth="2" />
+                <circle cx="36" cy="36" r="22" fill={`url(#ms-dots-${m.key})`} />
+                {/* shine arc */}
+                <path d="M22 28 Q36 18 50 28" stroke={m.shine} strokeWidth="2.5" fill="none" opacity="0.9" />
+                {/* icon centered in 64x64 viewBox, offset to 72 */}
+                <g transform="translate(4,4)">
+                    <MilestoneIcon icon={m.icon} />
+                </g>
+            </svg>
+            <div className="text-center">
+                <div className="font-heading text-lg leading-none">{m.title}</div>
+                <div className="font-body text-xs text-ink/60 font-bold">{m.min}+ comics</div>
+            </div>
+        </div>
+    );
+};

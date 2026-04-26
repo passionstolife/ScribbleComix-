@@ -2,19 +2,21 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown, Share2, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown, Share2, Loader2, Film } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
+import CinematicReader from "../components/CinematicReader";
 
 const Reader = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { billing } = useAuth();
+    const { billing, user } = useAuth();
     const isUltimate = billing?.tier === "ultimate";
     const [comic, setComic] = useState(null);
     const [layoutOverride, setLayoutOverride] = useState(null);
     const [exportingPdf, setExportingPdf] = useState(false);
     const [sharing, setSharing] = useState(false);
+    const [cinematicOpen, setCinematicOpen] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -180,6 +182,14 @@ const Reader = () => {
                             {isUltimate ? <FileDown size={14}/> : <Crown size={14}/>} {exportingPdf ? "Exporting…" : "PDF"}
                         </button>
                         <button
+                            data-testid="reader-cinematic"
+                            onClick={() => setCinematicOpen(true)}
+                            className="btn-pink !py-2 !px-3 text-sm inline-flex items-center gap-1"
+                            title="Play with narrator + music + animations"
+                        >
+                            <Film size={14}/> Cinematic
+                        </button>
+                        <button
                             data-testid="reader-share"
                             onClick={doShare}
                             disabled={sharing}
@@ -213,6 +223,15 @@ const Reader = () => {
                     </div>
                 </div>
             </main>
+            {cinematicOpen && (
+                <CinematicReader
+                    comic={comic}
+                    tier={billing?.tier || "free"}
+                    unlimited={!!user?.unlimited}
+                    onClose={() => setCinematicOpen(false)}
+                    onUpsell={() => navigate('/billing')}
+                />
+            )}
         </div>
     );
 };

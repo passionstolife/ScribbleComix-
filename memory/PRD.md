@@ -3,60 +3,87 @@
 ## Original Problem Statement
 "I want to create a sketch comic book story" — app that generates playful hand-drawn sketch comics with AI + manual editing.
 
-## User Choices
+## User Choices (locked)
 - AI + manual comic editing
-- Emergent Universal Key: Claude Sonnet 4.5 (story) + Gemini Nano Banana `gemini-3.1-flash-image-preview` (sketch panels)
+- Emergent Universal Key: Claude Sonnet 4.5 (story) + Gemini Nano Banana (sketch panels)
 - User-selectable Grid or Webtoon layout
 - Emergent Google Auth
-- Playful sketch/ink aesthetic
+- Playful sketch/ink aesthetic (no purple gradients)
 - Monetization: credits + subscriptions (Stripe). Cost model: story free, sketch = 1 credit. Free tier: 20 credits. Paid: packs $3.99/$8.99/$17.99 + Pro $7.99/mo + Ultimate $15.99/mo (unlimited).
 
 ## Architecture
 - Backend: FastAPI + MongoDB (motor), emergentintegrations (Claude+Nano Banana+Stripe), httpx for Emergent Auth exchange.
-- Frontend: React (CRA) + React Router + Tailwind + Shadcn + sonner + lucide-react.
+- Frontend: React (CRA) + React Router + Tailwind + Shadcn + sonner + lucide-react + jsPDF.
 - Auth: Emergent Google Auth → `/dashboard#session_id=…` → backend exchange → cookie + localStorage token.
-- Payments: Stripe Checkout (one-time SKUs) via emergentintegrations. payment_transactions collection ensures idempotent granting. Subscriptions modeled as 30-day tier extensions (user renews manually).
+- Payments: Stripe Checkout one-time + Subscriptions, Customer Portal, webhook-driven idempotent grants.
 
-## Implemented (2026-02)
-- Backend: auth/AI/comic/billing stack + public share + true subscriptions + Customer Portal + **Founder/Co-Founder/Promoter role system** + **XP/Level/Achievement gamification** + **/api/profile/me & /api/profile/public/:user_id** + **/api/admin/{promote,users}**.
-- Admins seeded at module level: `passionstolife@gmail.com` (Founder), `cachetito1966@gmail.com` + `ramonfloridarican12@gmail.com` (Co-Founders). All receive unlimited credits + ultimate tier for 100 years on first login. Roxy's email to be added by admin via /admin/promote when she joins (role='promoter', also unlimited).
-- 10 achievements: first_steps, published_author, serial_creator, ink_master, supporter, pro_ink, ultimate_legend, story_spinner, share_champion, night_owl. Auto-unlock via _check_achievements on create/share/purchase/subscribe/panel-sketch events.
-- 10 levels split across 5 tier colors: bronze → silver → gold → platinum → diamond. Ranks: Sketch Novice → Ink Apprentice → Pen Artisan → Panel Master → Comic Legend.
-- Frontend pages: Landing, Dashboard, Creator, Reader (HTML + dynamic PDF + share), Billing (promo + walking-doodle + portal), BillingSuccess (Stripe polling), PublicReader, **Profile (role badge + laurel tier medallion + XP bar + stats + achievement grid)**, **Admin dashboard (users table + promote form)**.
-- Navbar: credits/tier chip + Founder shield admin button + RoleBadge next to user name.
-- Hand-drawn SVG badge library (`Badges.jsx`): `RoleBadge` (6 distinct shield designs), `TierBadge` (laurel medallion w/ ribbon banner), `AchievementSeal` (comic-book starburst seals BOOM/ZAP/POW/WOW/LOVE/★/♛/☾).
-- Tests: 66/69 (24/24 new iter6 + full frontend flows).
+## Implemented (chronological)
+### 2026-02 — v1
+- Auth, Comic CRUD, AI panel generation, Stripe one-time + subscriptions, Customer Portal, public share.
+- Walking doodle SVG, pointing doodle, brutalist sketch UI.
+- Founder seeding: passionstolife@gmail.com (Founder) + cachetito1966@gmail.com + ramonfloridarican12@gmail.com (Co-Founders) auto-get unlimited+ultimate at login.
+- 10 achievements + 10 levels + RoleBadge/TierBadge/AchievementSeal SVGs.
+- Profile, Admin, BillingSuccess polling, PDF export (Ultimate only).
 
-## Known issues & debt
-- Backend: `server.py` is now 1157 lines — should split into billing/sharing/gamification/admin modules in a cleanup sprint.
-- 3 iter-5 Stripe tests are stale (they assume STRIPE_PRICE_PRO is NOT set, but it now is) — update assertions when revisiting tests.
-- `/admin/users` has a silent 500-user cap — add pagination at scale.
+### 2026-04 — v1.1 (this session)
+**Phase 1: Visibility & Trophy Bookshelf**
+- Bold pink "ADMIN" button in Navbar (was tiny shield icon) for founders/co_founders.
+- Role badge always visible in nav (mobile + desktop).
+- Big "TITLE BANNER" on Profile (e.g., "FOUNDER · INK APPRENTICE · LVL 4").
+- "Admin Panel" CTA card on Dashboard for founders.
+- "Trophy Shelf:" milestone progress strip on Dashboard.
+- **Trophy Bookshelf** on Profile: 6 progressive milestones (Sketch Starter→Budding Author→Story Weaver→Panel Master→Ink Virtuoso→Legendary Creator) at 1/3/7/12/20/50 comics. New `MilestoneBadge` SVG component with hand-drawn icons (quill/pencils/scroll/book/trophy/crown_star).
 
-## P1/P2 Backlog (v1.2+)
-- P1: **"Read my comic aloud"** (ElevenLabs TTS) — requires user's ELEVENLABS_API_KEY env var
-- P1: **2D→3D panel converter** (Meshy AI) — requires MESHY_API_KEY env var + Three.js/model-viewer
-- P1: **Printable achievement certificates** (jsPDF)
-- P1: **Auto OG social-share image** for /read/:shareId (viral growth)
-- P2: **Level-Up celebration popup** (animated badge reveal)
-- P2: Pagination on /admin/users
-- P2: Split server.py into modules
-- P2: FOUNDER_EMAILS from env (FOUNDER_EMAILS_CSV)
+**Phase 2: Cinematic Read Mode**
+- New `CinematicReader.jsx` modal on Reader + PublicReader pages.
+- Procedural ambient music (`/lib/ambientMusic.js`) using Web Audio API: 6 moods (adventure/funny/sad/spooky/heroic/chill). Zero external dependencies.
+- Browser SpeechSynthesis API as scroll-synced narrator (free, no API key).
+- 6 panel animation effects: Ken Burns, Zoom Punch, Shake, Ink Reveal, Drift, Fade (CSS keyframes only).
+- Tier gating: Free=5s preview, Pro=30s, Ultimate=∞. Upsell modal on preview-end.
+
+**Phase 3: Pinterest-style Discover/Collection/Events**
+- New backend endpoints: GET `/discover`, POST `/comics/{id}/like`, POST `/comics/{id}/save`, GET `/collection/me`, full CRUD `/events` (founder-gated create/delete) + `/events/{id}/submit`.
+- New collections: `comic_likes`, `collections`, `events`. Comics gain `event_id`, `tint`, `like_count`, `save_count`.
+- New pages: `/discover` (masonry), `/collection`, `/events`, `/events/:eventId`.
+- Free 16-color tint palette for event submissions (`/lib/tints.js`).
+- Navbar: Discover/Events/Collection links for logged-in users; Discover for public.
+
+**Phase 4: Printable Achievement Certificates**
+- `/lib/certificate.js` — landscape A4 PDF certificates with sketch border, doodle stars, official seal.
+- "Cert" download button on every unlocked achievement & milestone on Profile page.
 
 ## Tier features wired (full)
-- Free: 20 credits on signup, story free, 1 credit/sketch.
-- Pro: 300 credits + character consistency + priority (flag).
-- Ultimate: unlimited sketches + PDF export + character consistency + all Pro perks.
+- Free: 20 credits on signup, story free, 1 credit/sketch, 5s cinematic preview.
+- Pro: 300 credits, character consistency, 30s cinematic preview.
+- Ultimate: unlimited sketches + PDF export + character consistency + unlimited cinematic + all Pro perks.
 
-## True subscriptions (v2)
-- `/api/billing/subscribe` uses stripe SDK mode='subscription' with recurring `price` IDs — **activates automatically** when user sets `STRIPE_PRICE_PRO` and `STRIPE_PRICE_ULTIMATE` env vars (their own Stripe account, live key).
-- Customer Portal `/api/billing/portal` lets users self-cancel.
-- Until real Stripe prices are set, app falls back to the 30-day one-time flow with sk_test_emergent.
+## Known issues & debt (P1/P2)
+- Backend `server.py` is 1393 lines — split into routes/discover.py, routes/events.py, routes/profile.py, routes/billing.py.
+- 3 stale iter-5 Stripe tests assume STRIPE_PRICE_PRO is unset (now set).
+- `/admin/users` silent 500-user cap → add pagination.
 
-## P1/P2 Backlog
-- P2: Auto-generated OG/Twitter social-share image for `/read/:shareId` (watermarked "Made with ScribbleComix")
-- P2: IntersectionObserver to retrigger WalkingDoodle animation when billing page enters view
-- P2: Panel reordering (drag-and-drop)
-- P2: Drag-to-position speech bubbles
-- P2: Template starter prompts
-- P2: Discover/community feed
-- P2: Move PROMO_CODES to DB for non-engineer management
+## Backlog
+### P1 (next)
+- 2D → 3D converter (Meshy AI) — needs MESHY_API_KEY.
+- Auto OG/Twitter share image for /read/:shareId.
+- Level-Up celebration popup (animated badge reveal).
+- Real ElevenLabs TTS option (current is browser-native; user can opt-in to higher quality).
+
+### P2
+- Pagination on /admin/users.
+- FOUNDER_EMAILS from env (FOUNDER_EMAILS_CSV).
+- Drag-to-reorder panels & speech bubbles.
+- Coloring on actual panel pixels (canvas brush) — current implementation is tint overlay only.
+- Comments on shared comics.
+- Move PROMO_CODES to DB.
+
+## Test status
+- Iter 7 (this session): 28/28 backend pytest pass + all critical frontend flows green.
+- Reports: `/app/test_reports/iteration_1.json` … `iteration_7.json` + `/app/backend/tests/test_iter7_discover_events.py`.
+
+## Critical for next agent
+- **Stripe**: backend uses `stripe.checkout.Session.retrieve_async()` directly (NOT the emergentintegrations wrapper) due to Pydantic crash on nested metadata. Do not revert.
+- **Auth**: do NOT hardcode the redirect URL. `frontend/src/context/AuthContext.jsx` and `pages/AuthCallback.jsx` are intentional.
+- **Founder seeding**: re-applied on every `/auth/session` call for FOUNDER_EMAILS / CO_FOUNDER_EMAILS allowlists.
+- **Music**: `ambientMusic.js` uses Web Audio API procedurally — zero external assets. If user requests "real" music tracks later, the engine interface (`{start, stop, setVolume}`) makes swapping to MP3 trivial.
+- **Cinematic Reader**: respects autoplay policy — `start()` is called from a user-initiated click, never on mount. AudioContext only created after click.

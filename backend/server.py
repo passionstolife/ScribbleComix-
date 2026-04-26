@@ -156,7 +156,7 @@ class Comic(BaseModel):
     layout: Literal["grid", "webtoon"] = "grid"
     panels: List[Panel] = []
     created_at: str
-    updated_at: str
+    updated_at: Optional[str] = None
     share_id: Optional[str] = None  # present when sharing is enabled
     is_public: bool = False
     author_name: Optional[str] = None
@@ -601,6 +601,243 @@ async def get_public_comic(share_id: str):
         author_name=doc.get("author_name"),
         created_at=doc.get("created_at", ""),
     )
+
+
+# ================= DISCOVER / COLLECTION / EVENTS =================
+def _discover_card(doc: dict) -> dict:
+    """Return a minimal Pinterest-style card (no full panel data)."""
+    first_img = ""
+    panels = doc.get("panels") or []
+    if panels and isinstance(panels[0], dict):
+        first_img = panels[0].get("image_base64") or ""
+    return {
+        "comic_id": doc["comic_id"],
+        "share_id": doc.get("share_id"),
+        "title": doc.get("title", ""),
+        "synopsis": (doc.get("synopsis") or "")[:200],
+        "author_name": doc.get("author_name", "Anonymous"),
+        "user_id": doc.get("user_id"),
+        "cover_image": first_img,
+        "panel_count": len(panels),
+        "like_count": int(doc.get("like_count", 0)),
+        "save_count": int(doc.get("save_count", 0)),
+        "event_id": doc.get("event_id"),
+        "tint": doc.get("tint"),
+        "created_at": doc.get("created_at", ""),
+    }
+
+
+@api_router.get("/discover")
+async def discover_feed(
+    request: Request,
+    event_id: Optional[str] = None,
+    sort: str = "recent",  # recent | popular
+    limit: int = 30,
+    offset: int = 0,
+    session_token: Optional[str] = Cookie(None),
+    authorization: Optional[str] = Header(None),
+):
+    q: Dict = {"is_public": True}
+    if event_id:
+        q["event_id"] = event_id
+    sort_key = [("created_at", -1)] if sort == "recent" else [("like_count", -1), ("created_at", -1)]
+    limit = max(1, min(60, int(limit or 30)))
+    offset = max(0, int(offset or 0))
+    cursor = db.comics.find(q, {"_id": 0}).sort(sort_key).skip(offset).limit(limit)
+    docs = await cursor.to_list(length=limit)
+    cards = [_discover_card(d) for d in docs]
+    # Attach "is_saved" + "is_liked" for current user
+    try:
+        u = await get_current_user(request, session_token, authorization)
+        ids = [c["comic_id"] for c in cards]
+        saved = await db.collections.find({"user_id": u.user_id, "comic_id": {"$in": ids}}, {"_id": 0, "comic_id": 1}).to_list(length=len(ids))
+        liked = await db.comic_likes.find({"user_id": u.user_id, "comic_id": {"$in": ids}}, {"_id": 0, "comic_id": 1}).to_list(length=len(ids))
+        saved_set = {s["comic_id"] for s in saved}
+        liked_set = {li["comic_id"] for li in liked}
+        for c in cards:
+            c["is_saved"] = c["comic_id"] in saved_set
+            c["is_liked"] = c["comic_id"] in liked_set
+    except HTTPException:
+        for c in cards:
+            c["is_saved"] = False
+            c["is_liked"] = False
+    return {"items": cards, "offset": offset, "limit": limit}
+
+
+@api_router.post("/comics/{comic_id}/like")
+async def toggle_like(comic_id: str, request: Request,
+                      session_token: Optional[str] = Cookie(None),
+                      authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    # Must be a public comic
+    doc = await db.comics.find_one({"comic_id": comic_id, "is_public": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Public comic not found")
+    existing = await db.comic_likes.find_one({"user_id": u.user_id, "comic_id": comic_id}, {"_id": 0})
+    if existing:
+        await db.comic_likes.delete_one({"user_id": u.user_id, "comic_id": comic_id})
+        await db.comics.update_one({"comic_id": comic_id}, {"$inc": {"like_count": -1}})
+        liked = False
+    else:
+        await db.comic_likes.insert_one({
+            "user_id": u.user_id, "comic_id": comic_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await db.comics.update_one({"comic_id": comic_id}, {"$inc": {"like_count": 1}})
+        liked = True
+    fresh = await db.comics.find_one({"comic_id": comic_id}, {"_id": 0, "like_count": 1})
+    return {"liked": liked, "like_count": int((fresh or {}).get("like_count", 0))}
+
+
+@api_router.post("/comics/{comic_id}/save")
+async def toggle_save(comic_id: str, request: Request,
+                       session_token: Optional[str] = Cookie(None),
+                       authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    doc = await db.comics.find_one({"comic_id": comic_id, "is_public": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Public comic not found")
+    existing = await db.collections.find_one({"user_id": u.user_id, "comic_id": comic_id}, {"_id": 0})
+    if existing:
+        await db.collections.delete_one({"user_id": u.user_id, "comic_id": comic_id})
+        await db.comics.update_one({"comic_id": comic_id}, {"$inc": {"save_count": -1}})
+        saved = False
+    else:
+        await db.collections.insert_one({
+            "user_id": u.user_id, "comic_id": comic_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await db.comics.update_one({"comic_id": comic_id}, {"$inc": {"save_count": 1}})
+        saved = True
+    return {"saved": saved}
+
+
+@api_router.get("/collection/me")
+async def my_collection(request: Request,
+                         session_token: Optional[str] = Cookie(None),
+                         authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    pins = await db.collections.find({"user_id": u.user_id}, {"_id": 0}).sort([("created_at", -1)]).to_list(length=200)
+    ids = [p["comic_id"] for p in pins]
+    if not ids:
+        return {"items": []}
+    docs = await db.comics.find({"comic_id": {"$in": ids}, "is_public": True}, {"_id": 0}).to_list(length=len(ids))
+    by_id = {d["comic_id"]: d for d in docs}
+    cards = [_discover_card(by_id[p["comic_id"]]) for p in pins if p["comic_id"] in by_id]
+    for c in cards:
+        c["is_saved"] = True
+    return {"items": cards}
+
+
+# ---- EVENTS ----
+class EventModel(BaseModel):
+    event_id: str
+    title: str
+    description: Optional[str] = ""
+    category: Optional[str] = "general"
+    banner_color: Optional[str] = "highlight"  # highlight | hotpink | marker | bronze | emerald
+    emoji: Optional[str] = "🎉"
+    starts_at: Optional[str] = None
+    ends_at: Optional[str] = None
+    created_by: str
+    created_at: str
+    submission_count: int = 0
+
+
+class EventCreateBody(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    category: Optional[str] = "general"
+    banner_color: Optional[str] = "highlight"
+    emoji: Optional[str] = "🎉"
+    ends_at: Optional[str] = None  # ISO date string
+
+
+@api_router.get("/events")
+async def list_events():
+    events = await db.events.find({}, {"_id": 0}).sort([("created_at", -1)]).to_list(length=100)
+    # attach submission counts
+    for e in events:
+        e["submission_count"] = await db.comics.count_documents({"event_id": e["event_id"], "is_public": True})
+    return {"items": events}
+
+
+@api_router.post("/events")
+async def create_event(body: EventCreateBody, request: Request,
+                        session_token: Optional[str] = Cookie(None),
+                        authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if u.role not in ("founder", "co_founder"):
+        raise HTTPException(status_code=403, detail="Only founders/co-founders can create events")
+    ev = {
+        "event_id": f"ev_{uuid.uuid4().hex[:10]}",
+        "title": body.title.strip(),
+        "description": (body.description or "").strip(),
+        "category": body.category or "general",
+        "banner_color": body.banner_color or "highlight",
+        "emoji": body.emoji or "🎉",
+        "starts_at": datetime.now(timezone.utc).isoformat(),
+        "ends_at": body.ends_at,
+        "created_by": u.user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.events.insert_one(ev)
+    return {**{k: v for k, v in ev.items() if k != "_id"}, "submission_count": 0}
+
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str, request: Request,
+                        session_token: Optional[str] = Cookie(None),
+                        authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    if u.role not in ("founder", "co_founder"):
+        raise HTTPException(status_code=403, detail="Only founders/co-founders can delete events")
+    result = await db.events.delete_one({"event_id": event_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    # Detach submissions
+    await db.comics.update_many({"event_id": event_id}, {"$unset": {"event_id": ""}})
+    return {"deleted": True}
+
+
+@api_router.get("/events/{event_id}")
+async def get_event(event_id: str):
+    ev = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    ev["submission_count"] = await db.comics.count_documents({"event_id": event_id, "is_public": True})
+    subs = await db.comics.find({"event_id": event_id, "is_public": True}, {"_id": 0}).sort([("like_count", -1), ("created_at", -1)]).to_list(length=100)
+    return {"event": ev, "submissions": [_discover_card(s) for s in subs]}
+
+
+class SubmitEventBody(BaseModel):
+    comic_id: str
+    tint: Optional[str] = None  # free coloring swatch key
+
+
+@api_router.post("/events/{event_id}/submit")
+async def submit_to_event(event_id: str, body: SubmitEventBody, request: Request,
+                           session_token: Optional[str] = Cookie(None),
+                           authorization: Optional[str] = Header(None)):
+    u = await get_current_user(request, session_token, authorization)
+    ev = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not ev:
+        raise HTTPException(status_code=404, detail="Event not found")
+    comic = await db.comics.find_one({"comic_id": body.comic_id, "user_id": u.user_id}, {"_id": 0})
+    if not comic:
+        raise HTTPException(status_code=404, detail="Comic not found or not yours")
+    # Auto-publish if not already
+    share_id = comic.get("share_id") or f"s_{uuid.uuid4().hex[:10]}"
+    updates: Dict = {
+        "event_id": event_id,
+        "is_public": True,
+        "share_id": share_id,
+        "author_name": u.name,
+    }
+    if body.tint:
+        updates["tint"] = body.tint
+    await db.comics.update_one({"comic_id": body.comic_id}, {"$set": updates})
+    return {"submitted": True, "share_id": share_id}
 
 
 # ================= BILLING =================

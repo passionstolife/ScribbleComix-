@@ -2,13 +2,17 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2, BookOpen, Calendar } from "lucide-react";
+import { Plus, Trash2, BookOpen, Calendar, Shield, Trophy } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../context/AuthContext";
+import { MILESTONES } from "../components/Badges";
 
 const Dashboard = () => {
     const [comics, setComics] = useState([]);
     const [loading, setLoading] = useState(true);
     const navigate = useNavigate();
+    const { user } = useAuth();
+    const isAdmin = user?.role === "founder" || user?.role === "co_founder";
 
     const load = async () => {
         try {
@@ -48,6 +52,57 @@ const Dashboard = () => {
                         <Plus size={18} strokeWidth={2.5} /> New Comic
                     </button>
                 </div>
+
+                {/* Admin CTA card (founders/co_founders only) */}
+                {isAdmin && (
+                    <div
+                        data-testid="dashboard-admin-card"
+                        onClick={() => navigate('/admin')}
+                        className="mb-6 border-2 border-ink shadow-ink bg-hotpink text-white px-5 py-4 cursor-pointer hover:-translate-y-0.5 hover:-rotate-[0.4deg] transition-transform flex items-center justify-between gap-4 tape"
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 border-2 border-ink bg-white text-hotpink rounded-sm grid place-items-center shadow-ink-sm">
+                                <Shield size={22} strokeWidth={2.5}/>
+                            </div>
+                            <div>
+                                <div className="font-display uppercase tracking-[0.2em] text-xs font-bold opacity-90">Founder access</div>
+                                <div className="font-heading text-3xl leading-none">Admin Panel</div>
+                                <div className="font-body text-sm opacity-90 mt-0.5">Manage users, promote co-founders, and oversee the empire.</div>
+                            </div>
+                        </div>
+                        <div className="hidden sm:inline-flex items-center gap-1 px-3 py-2 border-2 border-ink bg-white text-ink rounded-sm font-display font-bold text-xs uppercase tracking-[0.15em]">
+                            Open →
+                        </div>
+                    </div>
+                )}
+
+                {/* Milestone progress strip */}
+                {!loading && (
+                    (() => {
+                        const count = comics.length;
+                        const next = MILESTONES.find((m) => count < m.min);
+                        const unlocked = MILESTONES.filter((m) => count >= m.min).length;
+                        return (
+                            <div
+                                data-testid="milestone-strip"
+                                onClick={() => navigate('/profile')}
+                                className="mb-8 border-2 border-ink shadow-ink-sm bg-highlight px-4 py-3 flex items-center justify-between gap-3 cursor-pointer hover:-translate-y-0.5 transition-transform"
+                            >
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <Trophy size={18} strokeWidth={2.5}/>
+                                    <div className="font-display text-sm min-w-0">
+                                        <span className="font-bold uppercase tracking-[0.15em] text-xs">Trophy Shelf:</span>{" "}
+                                        <span className="font-body">
+                                            {count} comic{count === 1 ? "" : "s"} · {unlocked}/{MILESTONES.length} trophies unlocked
+                                            {next && <> · <strong>{next.min - count}</strong> to go for <strong>{next.title}</strong></>}
+                                        </span>
+                                    </div>
+                                </div>
+                                <span className="hidden sm:inline font-display font-bold text-xs uppercase tracking-[0.15em]">View shelf →</span>
+                            </div>
+                        );
+                    })()
+                )}
 
                 {loading ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">

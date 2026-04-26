@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { BookOpenCheck, Sparkles, LayoutGrid, AlignJustify } from "lucide-react";
+import { BookOpenCheck, Sparkles, LayoutGrid, AlignJustify, Film } from "lucide-react";
+import CinematicReader from "../components/CinematicReader";
 
 const PublicReader = () => {
     const { shareId } = useParams();
     const [comic, setComic] = useState(null);
     const [err, setErr] = useState(null);
     const [layoutOverride, setLayoutOverride] = useState(null);
+    const [cinematicOpen, setCinematicOpen] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -51,7 +53,15 @@ const PublicReader = () => {
                     <div className="font-heading text-4xl">Opening…</div>
                 ) : (
                     <>
-                        <div className="flex items-center justify-end mb-4">
+                        <div className="flex items-center justify-end mb-4 gap-2 flex-wrap">
+                            <button
+                                data-testid="public-cinematic"
+                                onClick={() => setCinematicOpen(true)}
+                                className="btn-pink !py-2 !px-3 text-sm inline-flex items-center gap-1"
+                                title="Play with narrator + music + animations"
+                            >
+                                <Film size={14}/> Cinematic
+                            </button>
                             <div className="flex border-2 border-ink">
                                 <button data-testid="public-layout-grid" onClick={() => setLayoutOverride('grid')} className={`px-3 py-1.5 font-display font-bold text-sm inline-flex items-center gap-1 ${layout==='grid'?'bg-highlight':'bg-white'}`}>
                                     <LayoutGrid size={14}/> Grid
@@ -99,6 +109,15 @@ const PublicReader = () => {
                     </>
                 )}
             </main>
+            {cinematicOpen && comic && (
+                <CinematicReader
+                    comic={comic}
+                    tier="free"
+                    unlimited={false}
+                    onClose={() => setCinematicOpen(false)}
+                    onUpsell={() => { window.location.href = "/"; }}
+                />
+            )}
         </div>
     );
 };

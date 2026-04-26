@@ -13,6 +13,9 @@ import BillingSuccess from "./pages/BillingSuccess";
 import PublicReader from "./pages/PublicReader";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
+import Discover from "./pages/Discover";
+import Collection from "./pages/Collection";
+import Events from "./pages/Events";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const AppRouter = () => {
@@ -33,6 +36,10 @@ const AppRouter = () => {
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/profile/:userId" element={<Profile />} />
             <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+            <Route path="/discover" element={<Discover />} />
+            <Route path="/collection" element={<ProtectedRoute><Collection /></ProtectedRoute>} />
+            <Route path="/events" element={<Events />} />
+            <Route path="/events/:eventId" element={<Events />} />
             <Route path="/read/:shareId" element={<PublicReader />} />
             <Route path="*" element={<Landing />} />
         </Routes>
