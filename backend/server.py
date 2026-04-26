@@ -1391,3 +1391,66 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+# ================= STARTUP: SEED STARTER EVENTS =================
+STARTER_EVENTS = [
+    {
+        "key": "welcome_week",
+        "title": "Welcome Week",
+        "description": "Your first comic deserves a stage. Submit any comic you've made and join the kickoff event.",
+        "emoji": "👋",
+        "banner_color": "highlight",
+        "category": "general",
+    },
+    {
+        "key": "spooky_october",
+        "title": "Spooky October",
+        "description": "Ghosts, ghouls, haunted toasters — bring us your spookiest sketch story.",
+        "emoji": "👻",
+        "banner_color": "hotpink",
+        "category": "seasonal",
+    },
+    {
+        "key": "funny_mondays",
+        "title": "Funny Mondays",
+        "description": "Make us laugh out loud. Best gag wins community love.",
+        "emoji": "😂",
+        "banner_color": "marker",
+        "category": "weekly",
+    },
+    {
+        "key": "hero_quest",
+        "title": "Hero Quest",
+        "description": "Forge a legend in 6 panels — every hero's tale starts somewhere.",
+        "emoji": "⚔️",
+        "banner_color": "gold",
+        "category": "general",
+    },
+]
+
+
+@app.on_event("startup")
+async def seed_starter_events():
+    # Find the founder user (first one in allowlist who has signed up)
+    founder = await db.users.find_one({"role": "founder"}, {"_id": 0, "user_id": 1})
+    creator_id = founder["user_id"] if founder else "system"
+    for ev in STARTER_EVENTS:
+        existing = await db.events.find_one({"_seed_key": ev["key"]}, {"_id": 0, "event_id": 1})
+        if existing:
+            continue
+        await db.events.insert_one({
+            "event_id": f"ev_{uuid.uuid4().hex[:10]}",
+            "title": ev["title"],
+            "description": ev["description"],
+            "category": ev["category"],
+            "banner_color": ev["banner_color"],
+            "emoji": ev["emoji"],
+            "starts_at": datetime.now(timezone.utc).isoformat(),
+            "ends_at": None,
+            "created_by": creator_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "_seed_key": ev["key"],
+        })
+    logger.info("Starter events seeded (idempotent)")
+
