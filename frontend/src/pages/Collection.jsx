@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { Bookmark, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import DoodleBackground from "../components/DoodleBackground";
 
 const Collection = () => {
     const { user } = useAuth();
@@ -45,9 +46,10 @@ const Collection = () => {
     };
 
     return (
-        <div className="min-h-screen" data-testid="collection-page">
+        <div className="min-h-screen relative" data-testid="collection-page">
+            <DoodleBackground variant="discover" density="low" />
             <Navbar />
-            <main className="max-w-7xl mx-auto px-6 lg:px-10 py-10">
+            <main className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-10">
                 <div className="mb-6">
                     <div className="font-display uppercase tracking-[0.2em] text-xs font-bold text-ink/70">Pinned</div>
                     <h1 className="font-heading text-6xl leading-none mt-1 flex items-center gap-3">

@@ -149,6 +149,44 @@ body::before {
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Floating doodle decoration animations */
+@keyframes doodle-wiggle {
+    0%, 100% { transform: rotate(var(--r, 0deg)) translate(0, 0); }
+    25%      { transform: rotate(calc(var(--r, 0deg) + 8deg)) translate(2px, -3px); }
+    50%      { transform: rotate(var(--r, 0deg)) translate(-2px, 2px); }
+    75%      { transform: rotate(calc(var(--r, 0deg) - 6deg)) translate(3px, 1px); }
+}
+@keyframes doodle-drift {
+    0%, 100% { transform: translate(0, 0) rotate(var(--r, 0deg)); }
+    50%      { transform: translate(-6px, -10px) rotate(calc(var(--r, 0deg) + 4deg)); }
+}
+.doodle-wiggle {
+    animation-name: doodle-wiggle;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-in-out;
+}
+.doodle-drift {
+    animation-name: doodle-drift;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-in-out;
+}
+
+/* Hand-drawn squiggle divider — usable as <div className="squiggle-divider" /> */
+.squiggle-divider {
+    height: 18px;
+    width: 100%;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 18' preserveAspectRatio='none'><path d='M0 9 Q15 0 30 9 T60 9 T90 9 T120 9' fill='none' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/></svg>");
+    background-repeat: repeat-x;
+    background-size: 120px 18px;
+    opacity: 0.85;
+}
+
+/* Mobile bottom-tab safe-area padding */
+.has-mobile-tabbar { padding-bottom: 76px; }
+@media (min-width: 768px) {
+    .has-mobile-tabbar { padding-bottom: 0; }
+}
+
 @layer base {
     [data-debug-wrapper="true"] { display: contents !important; }
 }

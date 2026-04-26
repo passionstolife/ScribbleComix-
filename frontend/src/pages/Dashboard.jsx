@@ -6,6 +6,7 @@ import { Plus, Trash2, BookOpen, Calendar, Shield, Trophy } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import { MILESTONES } from "../components/Badges";
+import DoodleBackground from "../components/DoodleBackground";
 
 const Dashboard = () => {
     const [comics, setComics] = useState([]);
@@ -40,9 +41,10 @@ const Dashboard = () => {
     };
 
     return (
-        <div className="min-h-screen" data-testid="dashboard-page">
+        <div className="min-h-screen relative" data-testid="dashboard-page">
+            <DoodleBackground variant="creator" density="low" />
             <Navbar />
-            <main className="max-w-7xl mx-auto px-6 lg:px-10 py-10">
+            <main className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-10">
                 <div className="flex items-end justify-between gap-3 mb-8">
                     <div className="min-w-0">
                         <div className="font-display uppercase tracking-[0.2em] text-xs font-bold text-ink/70">Your shelf</div>

@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Sparkles, Wand2, Layers, Download, ArrowRight } from "lucide-react";
 import Navbar from "../components/Navbar";
+import DoodleBackground from "../components/DoodleBackground";
 
 const features = [
     { icon: Wand2, title: "AI story + sketches", body: "Type a prompt. Get a hand-drawn comic story in panels, ready to tweak." },
@@ -14,7 +15,8 @@ const Landing = () => {
     const { user, login } = useAuth();
     const navigate = useNavigate();
     return (
-        <div className="min-h-screen">
+        <div className="min-h-screen relative">
+            <DoodleBackground variant="default" density="medium" />
             <Navbar />
             {/* HERO */}
             <section className="relative overflow-hidden">

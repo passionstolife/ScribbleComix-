@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { toast } from "sonner";
 import { Loader2, Sparkles, Flame, Clock } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import DoodleBackground from "../components/DoodleBackground";
 
 const Discover = () => {
     const { user } = useAuth();
@@ -61,9 +62,10 @@ const Discover = () => {
     };
 
     return (
-        <div className="min-h-screen" data-testid="discover-page">
+        <div className="min-h-screen relative" data-testid="discover-page">
+            <DoodleBackground variant="discover" density="medium" />
             <Navbar />
-            <main className="max-w-7xl mx-auto px-6 lg:px-10 py-10">
+            <main className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-10">
                 <div className="flex items-end justify-between flex-wrap gap-4 mb-6">
                     <div>
                         <div className="font-display uppercase tracking-[0.2em] text-xs font-bold text-ink/70">Community</div>

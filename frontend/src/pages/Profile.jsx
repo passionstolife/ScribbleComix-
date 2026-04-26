@@ -6,6 +6,7 @@ import { RoleBadge, TierBadge, AchievementSeal, MilestoneBadge, MILESTONES } fro
 import { Sparkles, Crown, Calendar, Trophy, Lock, Shield, Download } from "lucide-react";
 import { toast } from "sonner";
 import { downloadCertificate } from "../lib/certificate";
+import DoodleBackground from "../components/DoodleBackground";
 
 const Profile = () => {
     const { userId } = useParams();
@@ -68,11 +69,12 @@ const Profile = () => {
     }[data.role || "free"] || "bg-white text-ink";
 
     return (
-        <div className="min-h-screen" data-testid="profile-page">
+        <div className="min-h-screen relative" data-testid="profile-page">
+            <DoodleBackground variant="profile" density="medium" />
             <Navbar />
-            <main className="max-w-6xl mx-auto px-6 lg:px-10 py-10">
+            <main className="relative z-10 max-w-6xl mx-auto px-6 lg:px-10 py-10">
                 {/* BIG TITLE BANNER */}
-                <div className={`border-2 border-ink shadow-ink-sm ${titleBannerColor} px-6 py-3 mb-4 flex items-center justify-between gap-4 -rotate-[0.4deg]`} data-testid="profile-title-banner">
+                <div className={`border-2 border-ink shadow-ink-sm ${titleBannerColor} px-6 py-3 mb-2 flex items-center justify-between gap-4 -rotate-[0.4deg]`} data-testid="profile-title-banner">
                     <div className="flex items-center gap-3">
                         <RoleBadge role={data.role || "free"} size={34} />
                         <div className="font-display font-bold uppercase tracking-[0.25em] text-sm sm:text-base">
@@ -85,6 +87,7 @@ const Profile = () => {
                         </button>
                     )}
                 </div>
+                <div className="squiggle-divider mb-4" aria-hidden="true" />
 
                 {/* Hero card */}
                 <div className="ink-card p-8 relative tape">

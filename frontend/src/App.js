@@ -17,6 +17,7 @@ import Discover from "./pages/Discover";
 import Collection from "./pages/Collection";
 import Events from "./pages/Events";
 import ProtectedRoute from "./components/ProtectedRoute";
+import MobileTabBar from "./components/MobileTabBar";
 
 const AppRouter = () => {
     const location = useLocation();
@@ -25,24 +26,29 @@ const AppRouter = () => {
         return <AuthCallback />;
     }
     return (
-        <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/create" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
-            <Route path="/create/:id" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
-            <Route path="/comic/:id" element={<ProtectedRoute><Reader /></ProtectedRoute>} />
-            <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
-            <Route path="/billing/success" element={<ProtectedRoute><BillingSuccess /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/profile/:userId" element={<Profile />} />
-            <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-            <Route path="/discover" element={<Discover />} />
-            <Route path="/collection" element={<ProtectedRoute><Collection /></ProtectedRoute>} />
-            <Route path="/events" element={<Events />} />
-            <Route path="/events/:eventId" element={<Events />} />
-            <Route path="/read/:shareId" element={<PublicReader />} />
-            <Route path="*" element={<Landing />} />
-        </Routes>
+        <>
+            <div className="has-mobile-tabbar">
+                <Routes>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                    <Route path="/create" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
+                    <Route path="/create/:id" element={<ProtectedRoute><Creator /></ProtectedRoute>} />
+                    <Route path="/comic/:id" element={<ProtectedRoute><Reader /></ProtectedRoute>} />
+                    <Route path="/billing" element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+                    <Route path="/billing/success" element={<ProtectedRoute><BillingSuccess /></ProtectedRoute>} />
+                    <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+                    <Route path="/profile/:userId" element={<Profile />} />
+                    <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+                    <Route path="/discover" element={<Discover />} />
+                    <Route path="/collection" element={<ProtectedRoute><Collection /></ProtectedRoute>} />
+                    <Route path="/events" element={<Events />} />
+                    <Route path="/events/:eventId" element={<Events />} />
+                    <Route path="/read/:shareId" element={<PublicReader />} />
+                    <Route path="*" element={<Landing />} />
+                </Routes>
+            </div>
+            <MobileTabBar />
+        </>
     );
 };
 

@@ -7,6 +7,7 @@ import { Calendar, PartyPopper, Plus, Trash2, X, Palette } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate, useParams } from "react-router-dom";
 import { TINTS } from "../lib/tints";
+import DoodleBackground from "../components/DoodleBackground";
 
 const BANNER_COLORS = {
     highlight: { bg: "bg-highlight", text: "text-ink" },
@@ -340,9 +341,10 @@ const Events = () => {
     };
 
     return (
-        <div className="min-h-screen" data-testid="events-page">
+        <div className="min-h-screen relative" data-testid="events-page">
+            <DoodleBackground variant="events" density="medium" />
             <Navbar />
-            <main className="max-w-7xl mx-auto px-6 lg:px-10 py-10">
+            <main className="relative z-10 max-w-7xl mx-auto px-6 lg:px-10 py-10">
                 {eventId ? (
                     <EventDetail eventId={eventId} user={user} />
                 ) : loading ? (
