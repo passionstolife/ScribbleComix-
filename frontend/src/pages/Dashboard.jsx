@@ -43,13 +43,13 @@ const Dashboard = () => {
         <div className="min-h-screen" data-testid="dashboard-page">
             <Navbar />
             <main className="max-w-7xl mx-auto px-6 lg:px-10 py-10">
-                <div className="flex items-end justify-between flex-wrap gap-4 mb-8">
-                    <div>
+                <div className="flex items-end justify-between gap-3 mb-8">
+                    <div className="min-w-0">
                         <div className="font-display uppercase tracking-[0.2em] text-xs font-bold text-ink/70">Your shelf</div>
-                        <h1 className="font-heading text-6xl leading-none mt-1">My Comics</h1>
+                        <h1 className="font-heading text-4xl sm:text-6xl leading-none mt-1">My Comics</h1>
                     </div>
-                    <button data-testid="dashboard-new-btn" onClick={() => navigate('/create')} className="btn-pink inline-flex items-center gap-2">
-                        <Plus size={18} strokeWidth={2.5} /> New Comic
+                    <button data-testid="dashboard-new-btn" onClick={() => navigate('/create')} className="shrink-0 btn-pink !py-2 !px-3 sm:!py-3 sm:!px-5 text-sm inline-flex items-center gap-1.5">
+                        <Plus size={16} strokeWidth={2.5} /> <span className="hidden sm:inline">New Comic</span><span className="sm:hidden">New</span>
                     </button>
                 </div>
 

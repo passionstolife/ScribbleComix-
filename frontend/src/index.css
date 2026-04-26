@@ -145,6 +145,10 @@ body::before {
 /* Selection */
 ::selection { background: #FFE600; color: #111; }
 
+/* Hide horizontal scrollbar on touch-friendly nav rows */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 @layer base {
     [data-debug-wrapper="true"] { display: contents !important; }
 }
