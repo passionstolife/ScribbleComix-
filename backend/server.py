@@ -1,8 +1,10 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Header, Cookie
+from fastapi.responses import HTMLResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import io
 import logging
 import uuid
 import base64
@@ -11,6 +13,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal, Dict
 from datetime import datetime, timezone, timedelta
 import httpx
+from PIL import Image, ImageDraw, ImageFont
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from emergentintegrations.payments.stripe.checkout import (
     StripeCheckout,
@@ -838,6 +841,254 @@ async def submit_to_event(event_id: str, body: SubmitEventBody, request: Request
         updates["tint"] = body.tint
     await db.comics.update_one({"comic_id": body.comic_id}, {"$set": updates})
     return {"submitted": True, "share_id": share_id}
+
+
+# ================= OG / TWITTER SHARE CARDS =================
+# Generates a 1200x630 social preview image and an HTML page with OG meta tags
+# that crawlers (Twitter/Facebook/Discord/Slack/LinkedIn) can scrape, while real
+# users get redirected to the React reader.
+
+OG_FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+OG_FONT_REG  = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+OG_FONT_ITAL = "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf"
+
+
+def _wrap_text(text: str, font, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
+    words = (text or "").split()
+    lines: List[str] = []
+    cur = ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        if draw.textlength(trial, font=font) <= max_width:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _decode_panel_image(b64: str) -> Optional[Image.Image]:
+    if not b64:
+        return None
+    try:
+        if "," in b64:
+            b64 = b64.split(",", 1)[1]
+        raw = base64.b64decode(b64)
+        return Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception:
+        return None
+
+
+def _generate_og_image(comic: dict) -> bytes:
+    """Build a 1200x630 sketch-style social card."""
+    W, H = 1200, 630
+    paper = (253, 251, 247)
+    ink = (17, 17, 17)
+    pink = (255, 0, 127)
+    yellow = (255, 230, 0)
+    blue = (0, 87, 255)
+
+    img = Image.new("RGB", (W, H), paper)
+    d = ImageDraw.Draw(img)
+
+    # Halftone dot texture
+    for y in range(0, H, 14):
+        for x in range(0, W, 14):
+            d.ellipse((x, y, x + 2, y + 2), fill=(17, 17, 17, 18))
+
+    # Left panel: sketched cover frame
+    cover_x, cover_y, cover_w, cover_h = 50, 80, 470, 470
+    # Drop shadow
+    d.rectangle((cover_x + 8, cover_y + 8, cover_x + cover_w + 8, cover_y + cover_h + 8), fill=ink)
+    # Panel paper
+    d.rectangle((cover_x, cover_y, cover_x + cover_w, cover_y + cover_h), fill=(255, 255, 255), outline=ink, width=4)
+
+    # Try to paste first panel image
+    panels = comic.get("panels") or []
+    if panels:
+        cover_pil = _decode_panel_image(panels[0].get("image_base64", ""))
+        if cover_pil:
+            cover_pil = cover_pil.resize((cover_w - 12, cover_h - 12), Image.LANCZOS)
+            img.paste(cover_pil, (cover_x + 6, cover_y + 6))
+        else:
+            try:
+                fnt = ImageFont.truetype(OG_FONT_BOLD, 220)
+            except Exception:
+                fnt = ImageFont.load_default()
+            d.text((cover_x + cover_w // 2 - 100, cover_y + cover_h // 2 - 130), "?!", font=fnt, fill=(120, 120, 120))
+    else:
+        try:
+            fnt = ImageFont.truetype(OG_FONT_BOLD, 220)
+        except Exception:
+            fnt = ImageFont.load_default()
+        d.text((cover_x + cover_w // 2 - 100, cover_y + cover_h // 2 - 130), "?!", font=fnt, fill=(120, 120, 120))
+
+    # Tape strip on cover (decorative)
+    d.rectangle((cover_x + 30, cover_y - 14, cover_x + 130, cover_y + 6), fill=yellow, outline=ink, width=2)
+
+    # Right side: text content
+    rx = 580
+    # "POW!" badge
+    d.polygon([
+        (rx, 95), (rx + 30, 70), (rx + 80, 80), (rx + 110, 60),
+        (rx + 140, 90), (rx + 170, 75), (rx + 180, 110), (rx + 150, 130),
+        (rx + 130, 160), (rx + 90, 145), (rx + 60, 165), (rx + 30, 140), (rx, 130)
+    ], fill=yellow, outline=ink)
+    try:
+        pow_font = ImageFont.truetype(OG_FONT_BOLD, 32)
+    except Exception:
+        pow_font = ImageFont.load_default()
+    d.text((rx + 35, 95), "POW!", font=pow_font, fill=ink)
+
+    # Title — try larger then shrink
+    title = (comic.get("title") or "Untitled").strip()
+    title_size = 72
+    title_font = None
+    title_lines: List[str] = []
+    while title_size >= 38:
+        try:
+            title_font = ImageFont.truetype(OG_FONT_BOLD, title_size)
+        except Exception:
+            title_font = ImageFont.load_default()
+            break
+        title_lines = _wrap_text(title, title_font, W - rx - 50, d)
+        if len(title_lines) <= 3:
+            break
+        title_size -= 6
+
+    ty = 200
+    for line in title_lines[:3]:
+        # yellow highlight under text
+        line_w = d.textlength(line, font=title_font)
+        d.rectangle((rx, ty + title_size * 0.85, rx + line_w + 12, ty + title_size + 8), fill=yellow)
+        d.text((rx + 6, ty), line, font=title_font, fill=ink)
+        ty += int(title_size * 1.05)
+
+    # Synopsis
+    syn = (comic.get("synopsis") or "").strip()
+    if syn:
+        try:
+            syn_font = ImageFont.truetype(OG_FONT_ITAL, 26)
+        except Exception:
+            syn_font = ImageFont.load_default()
+        syn_lines = _wrap_text(syn, syn_font, W - rx - 50, d)
+        ty += 14
+        for line in syn_lines[:3]:
+            d.text((rx, ty), line, font=syn_font, fill=(60, 60, 60))
+            ty += 32
+
+    # Author byline
+    author = (comic.get("author_name") or "Anonymous").strip()
+    try:
+        by_font = ImageFont.truetype(OG_FONT_REG, 24)
+    except Exception:
+        by_font = ImageFont.load_default()
+    d.text((rx, H - 110), f"by {author}", font=by_font, fill=ink)
+
+    # Brand strip bottom-right
+    try:
+        brand_font = ImageFont.truetype(OG_FONT_BOLD, 38)
+    except Exception:
+        brand_font = ImageFont.load_default()
+    brand_x = rx
+    by = H - 60
+    d.text((brand_x, by - 6), "Scribble", font=brand_font, fill=ink)
+    sw = d.textlength("Scribble", font=brand_font)
+    d.text((brand_x + sw, by - 6), "Comix", font=brand_font, fill=pink)
+
+    # Decorative star bottom-left
+    sx, sy_ = 80, H - 90
+    d.polygon([
+        (sx, sy_ - 35), (sx + 10, sy_ - 10), (sx + 36, sy_ - 8),
+        (sx + 16, sy_ + 10), (sx + 22, sy_ + 36), (sx, sy_ + 20),
+        (sx - 22, sy_ + 36), (sx - 16, sy_ + 10), (sx - 36, sy_ - 8), (sx - 10, sy_ - 10)
+    ], fill=blue, outline=ink)
+
+    # Border
+    d.rectangle((4, 4, W - 5, H - 5), outline=ink, width=4)
+
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+
+@api_router.get("/og/comic/{share_id}.png")
+async def og_image(share_id: str):
+    doc = await db.comics.find_one({"share_id": share_id, "is_public": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Comic not found")
+    png = _generate_og_image(doc)
+    return Response(content=png, media_type="image/png", headers={
+        "Cache-Control": "public, max-age=86400",
+    })
+
+
+def _esc(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+@api_router.get("/share/{share_id}", response_class=HTMLResponse)
+async def share_html(share_id: str, request: Request):
+    """HTML page with OG/Twitter meta tags for crawlers; auto-redirects humans to /read/:shareId."""
+    doc = await db.comics.find_one({"share_id": share_id, "is_public": True}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Comic not found or private")
+
+    title = _esc(doc.get("title") or "A ScribbleComix story")
+    syn = _esc((doc.get("synopsis") or "").strip()[:200]) or "A hand-drawn AI comic — read it on ScribbleComix."
+    author = _esc(doc.get("author_name") or "ScribbleComix creator")
+    # Prefer Forwarded host (Kubernetes ingress) so URLs match the public domain.
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+    base = f"{forwarded_proto}://{forwarded_host}" if forwarded_host else str(request.base_url).rstrip("/")
+    base = base.rstrip("/")
+    og_image = f"{base}/api/og/comic/{share_id}.png"
+    canonical = f"{base}/read/{share_id}"
+    desc = f"{syn} — by {author}"
+
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title} — ScribbleComix</title>
+<meta name="description" content="{desc}">
+
+<!-- Open Graph -->
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="ScribbleComix">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta property="og:image" content="{og_image}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="{canonical}">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta name="twitter:image" content="{og_image}">
+
+<link rel="canonical" href="{canonical}">
+<meta http-equiv="refresh" content="0; url={canonical}">
+<style>
+  body {{ font-family: system-ui, sans-serif; background: #FDFBF7; color: #111; padding: 40px; text-align: center; }}
+  a {{ color: #FF007F; font-weight: bold; }}
+  img {{ max-width: 600px; width: 100%; border: 2px solid #111; box-shadow: 6px 6px 0 #111; margin: 20px auto; display: block; }}
+</style>
+</head>
+<body>
+<h1>{title}</h1>
+<p>by {author}</p>
+<img src="{og_image}" alt="{title}">
+<p>Loading reader… <a href="{canonical}">Tap here if not redirected</a></p>
+<script>window.location.replace("{canonical}");</script>
+</body>
+</html>"""
+    return HTMLResponse(content=html, headers={"Cache-Control": "public, max-age=600"})
 
 
 # ================= BILLING =================

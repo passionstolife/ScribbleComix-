@@ -137,10 +137,12 @@ const Reader = () => {
                 shareId = data.share_id;
                 setComic((c) => ({ ...c, share_id: shareId, is_public: true }));
             }
-            const shareUrl = `${window.location.origin}/read/${shareId}`;
+            // Use the API share URL — contains OG meta tags for rich Twitter/Discord/Facebook previews,
+            // auto-redirects humans to /read/:shareId.
+            const shareUrl = `${window.location.origin}/api/share/${shareId}`;
             try {
                 await navigator.clipboard.writeText(shareUrl);
-                toast.success("Share link copied!", { description: shareUrl });
+                toast.success("Share link copied!", { description: "Paste it on Twitter, Discord, or anywhere — preview card included." });
             } catch (_e) {
                 toast.success("Public link ready", { description: shareUrl });
             }
