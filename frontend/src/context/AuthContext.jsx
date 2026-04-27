@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
@@ -7,6 +7,7 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [billing, setBilling] = useState(null); // {credits, tier, tier_expires_at}
     const [loading, setLoading] = useState(true);
+    const prevLevelRef = useRef(null);
 
     const fetchBilling = useCallback(async () => {
         try {
@@ -18,7 +19,15 @@ export const AuthProvider = ({ children }) => {
     const checkAuth = useCallback(async () => {
         try {
             const { data } = await api.get("/auth/me");
-            setUser(data);
+            setUser((prev) => {
+                // Detect level-up between calls and emit a global event
+                const prevLevel = prevLevelRef.current ?? prev?.level ?? null;
+                if (prevLevel != null && data.level > prevLevel) {
+                    window.dispatchEvent(new CustomEvent("scribblecomix:levelup", { detail: { from: prevLevel, to: data.level, rank: data.rank_title } }));
+                }
+                prevLevelRef.current = data.level;
+                return data;
+            });
             try {
                 const bill = await api.get("/billing/me");
                 setBilling(bill.data);

@@ -6,6 +6,7 @@ import { Wand2, Save, Image as ImageIcon, LayoutGrid, AlignJustify, Plus, Trash2
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import PointingDoodle from "../components/PointingDoodle";
+import { burstConfetti, cannonConfetti } from "../lib/confetti";
 
 const emptyPanel = () => ({
     id: crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2),
@@ -18,7 +19,7 @@ const emptyPanel = () => ({
 const Creator = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { fetchBilling, billing } = useAuth();
+    const { fetchBilling, billing, refresh } = useAuth();
     const tier = billing?.tier || "free";
     const credits = billing?.credits ?? 0;
     const isPro = tier === "pro" || tier === "ultimate";
@@ -120,6 +121,10 @@ const Creator = () => {
             toast.error("Ran out of credits mid-way.", { action: { label: "Plans", onClick: () => navigate('/billing') } });
         } else {
             toast.success("Sketches rendered!");
+            // Sketch burst — yellow/pink celebration over the canvas
+            burstConfetti({ theme: "comic", count: 50, power: 12 });
+            // Refresh user data so any XP-driven level-up popup fires
+            try { await refresh?.(); } catch (_e) { /* ignore */ }
         }
     };
 
@@ -135,6 +140,7 @@ const Creator = () => {
         try {
             const payload = { title, synopsis, layout, panels };
             let res;
+            const isNew = !comicId;
             if (comicId) {
                 res = await api.put(`/comics/${comicId}`, payload);
             } else {
@@ -142,7 +148,12 @@ const Creator = () => {
                 setComicId(res.data.comic_id);
                 window.history.replaceState(null, "", `/create/${res.data.comic_id}`);
             }
-            toast.success("Saved!");
+            toast.success(isNew ? "Comic saved! 🎉" : "Saved!");
+            if (isNew) {
+                // Big celebration when a brand new comic is born
+                cannonConfetti("celebration");
+            }
+            try { await refresh?.(); } catch (_e) { /* ignore */ }
         } catch (e) {
             toast.error("Save failed");
         } finally {

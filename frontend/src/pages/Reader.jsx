@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import CinematicReader from "../components/CinematicReader";
 import PopUpReader from "../components/PopUpReader";
+import { burstConfetti } from "../lib/confetti";
 
 const Reader = () => {
     const { id } = useParams();
@@ -132,6 +133,7 @@ const Reader = () => {
         setSharing(true);
         try {
             let shareId = comic.share_id;
+            const wasPublic = comic.is_public;
             if (!shareId || !comic.is_public) {
                 const { data } = await api.post(`/comics/${comic.comic_id}/share`);
                 shareId = data.share_id;
@@ -140,12 +142,27 @@ const Reader = () => {
             // Use the API share URL — contains OG meta tags for rich Twitter/Discord/Facebook previews,
             // auto-redirects humans to /read/:shareId.
             const shareUrl = `${window.location.origin}/api/share/${shareId}`;
+            const shareTitle = comic.title || "My ScribbleComix story";
+            const shareText = `Read "${shareTitle}" — a hand-drawn AI comic on ScribbleComix.`;
+
+            // Try native Web Share API first (mobile + supporting desktops). Falls back to clipboard.
+            if (navigator.share && navigator.canShare?.({ url: shareUrl })) {
+                try {
+                    await navigator.share({ title: shareTitle, text: shareText, url: shareUrl });
+                    burstConfetti({ theme: "celebration", count: 50, power: 14 });
+                    return;
+                } catch (err) {
+                    // user cancelled — silently fall through to clipboard fallback
+                    if (err?.name === "AbortError") return;
+                }
+            }
             try {
                 await navigator.clipboard.writeText(shareUrl);
                 toast.success("Share link copied!", { description: "Paste it on Twitter, Discord, or anywhere — preview card included." });
             } catch (_e) {
                 toast.success("Public link ready", { description: shareUrl });
             }
+            if (!wasPublic) burstConfetti({ theme: "celebration", count: 50, power: 14 });
         } catch (e) {
             toast.error("Could not create share link");
         } finally {

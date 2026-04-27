@@ -18,6 +18,7 @@ import Collection from "./pages/Collection";
 import Events from "./pages/Events";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MobileTabBar from "./components/MobileTabBar";
+import LevelUpPopup from "./components/LevelUpPopup";
 
 const AppRouter = () => {
     const location = useLocation();
@@ -48,6 +49,7 @@ const AppRouter = () => {
                 </Routes>
             </div>
             <MobileTabBar />
+            <LevelUpPopup />
         </>
     );
 };
