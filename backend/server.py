@@ -759,9 +759,17 @@ class EventCreateBody(BaseModel):
 @api_router.get("/events")
 async def list_events():
     events = await db.events.find({}, {"_id": 0}).sort([("created_at", -1)]).to_list(length=100)
-    # attach submission counts
+    if not events:
+        return {"items": []}
+    # Single aggregation to count submissions per event_id, instead of N count_documents calls.
+    event_ids = [e["event_id"] for e in events]
+    counts_cursor = db.comics.aggregate([
+        {"$match": {"is_public": True, "event_id": {"$in": event_ids}}},
+        {"$group": {"_id": "$event_id", "count": {"$sum": 1}}},
+    ])
+    counts = {c["_id"]: c["count"] async for c in counts_cursor}
     for e in events:
-        e["submission_count"] = await db.comics.count_documents({"event_id": e["event_id"], "is_public": True})
+        e["submission_count"] = counts.get(e["event_id"], 0)
     return {"items": events}
 
 
