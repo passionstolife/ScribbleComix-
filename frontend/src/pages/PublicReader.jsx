@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { BookOpenCheck, Sparkles, LayoutGrid, AlignJustify, Film } from "lucide-react";
+import { BookOpenCheck, Sparkles, LayoutGrid, AlignJustify, Film, Box } from "lucide-react";
 import CinematicReader from "../components/CinematicReader";
+import PopUpReader from "../components/PopUpReader";
 
 const PublicReader = () => {
     const { shareId } = useParams();
@@ -10,6 +11,7 @@ const PublicReader = () => {
     const [err, setErr] = useState(null);
     const [layoutOverride, setLayoutOverride] = useState(null);
     const [cinematicOpen, setCinematicOpen] = useState(false);
+    const [popupOpen, setPopupOpen] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -61,6 +63,14 @@ const PublicReader = () => {
                                 title="Play with narrator + music + animations"
                             >
                                 <Film size={14}/> Cinematic
+                            </button>
+                            <button
+                                data-testid="public-popup"
+                                onClick={() => setPopupOpen(true)}
+                                className="btn-yellow !py-2 !px-3 text-sm inline-flex items-center gap-1"
+                                title="3D pop-up book — tilt your phone or move your mouse"
+                            >
+                                <Box size={14}/> Pop-Up 3D
                             </button>
                             <div className="flex border-2 border-ink">
                                 <button data-testid="public-layout-grid" onClick={() => setLayoutOverride('grid')} className={`px-3 py-1.5 font-display font-bold text-sm inline-flex items-center gap-1 ${layout==='grid'?'bg-highlight':'bg-white'}`}>
@@ -117,6 +127,9 @@ const PublicReader = () => {
                     onClose={() => setCinematicOpen(false)}
                     onUpsell={() => { window.location.href = "/"; }}
                 />
+            )}
+            {popupOpen && comic && (
+                <PopUpReader comic={comic} onClose={() => setPopupOpen(false)} />
             )}
         </div>
     );

@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import { api } from "../lib/api";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown, Share2, Loader2, Film } from "lucide-react";
+import { ArrowLeft, Download, Pencil, LayoutGrid, AlignJustify, FileDown, Crown, Share2, Loader2, Film, Box } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../context/AuthContext";
 import CinematicReader from "../components/CinematicReader";
+import PopUpReader from "../components/PopUpReader";
 
 const Reader = () => {
     const { id } = useParams();
@@ -17,6 +18,7 @@ const Reader = () => {
     const [exportingPdf, setExportingPdf] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [cinematicOpen, setCinematicOpen] = useState(false);
+    const [popupOpen, setPopupOpen] = useState(false);
 
     useEffect(() => {
         (async () => {
@@ -190,6 +192,14 @@ const Reader = () => {
                             <Film size={14}/> Cinematic
                         </button>
                         <button
+                            data-testid="reader-popup"
+                            onClick={() => setPopupOpen(true)}
+                            className="btn-yellow !py-2 !px-3 text-sm inline-flex items-center gap-1"
+                            title="3D pop-up book — tilt your phone or move your mouse"
+                        >
+                            <Box size={14}/> Pop-Up 3D
+                        </button>
+                        <button
                             data-testid="reader-share"
                             onClick={doShare}
                             disabled={sharing}
@@ -231,6 +241,9 @@ const Reader = () => {
                     onClose={() => setCinematicOpen(false)}
                     onUpsell={() => navigate('/billing')}
                 />
+            )}
+            {popupOpen && (
+                <PopUpReader comic={comic} onClose={() => setPopupOpen(false)} />
             )}
         </div>
     );
